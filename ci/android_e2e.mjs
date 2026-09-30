@@ -142,7 +142,10 @@ async function main() {
   await js("UI.A.perf('balanced'); UI.A.libDevice(); UI.A.libSeg('fav'); true"); await sleep(1500); shot('06_favorites');
   await js("UI.A.tab('set'); true"); await sleep(1500); shot('07_settings');
   await js("UI.A.tab('apps'); true"); await sleep(1500); shot('08_apps');
-  await js("UI.A.theme('kitty'); UI.A.tab('np'); true"); await sleep(2500); shot('09_kitty');
+  await js("UI.A.theme('kitty'); UI.A.tab('np'); true"); await sleep(5000);
+  const th = JSON.parse(await js('JSON.stringify({theme: document.body.dataset.theme, np: !!document.getElementById("np")})'));
+  check('theme switch (Китти)', th.theme === 'kitty' && th.np, JSON.stringify(th));
+  shot('09_kitty');
   await js("UI.A.theme('neon'); true"); await sleep(2500); shot('10_neon');
   await js("UI.A.theme('minecraft'); UI.A.tab('lib'); true"); await sleep(1000);
   adb('shell settings put system accelerometer_rotation 0');
