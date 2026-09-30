@@ -37,7 +37,8 @@ final class Media {
                 MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DISPLAY_NAME,
                 MediaStore.Audio.Media.DATE_ADDED
         };
-        String sel = MediaStore.Audio.Media.IS_MUSIC + " != 0";
+        // только что скопированный файл медиатека ещё не разобрала (is_music пока пусто) — его тоже показываем
+        String sel = "(" + MediaStore.Audio.Media.IS_MUSIC + " != 0 OR " + MediaStore.Audio.Media.IS_MUSIC + " IS NULL)";
         try (Cursor c = ctx.getContentResolver().query(coll, proj, sel, null, MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")) {
             if (c != null) {
                 while (c.moveToNext()) {

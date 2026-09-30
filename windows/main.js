@@ -293,10 +293,12 @@ ipcMain.on('installUpdate', async (e, url, name) => {
     spawn(file, ['/S', '/currentuser', '--updated', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
     setTimeout(() => app.quit(), 800);
   } catch (err) {
+    lastUpdateError = String((err && err.stack) || err);
+    console.log('[update]', lastUpdateError);
     sendEvent('update', { phase: 'error', message: 'Не получилось скачать обновление. Проверь интернет' });
   }
 });
-let lastUpdateFile = null;
+let lastUpdateFile = null, lastUpdateError = '';
 
 // ---------- проверка на сборочном сервере: снимки экранов и работа плеера ----------
 function wavSilence(file, seconds) {
@@ -358,8 +360,8 @@ function runSnapshots() {
       report.push('update check: ' + st);
       await js(`UI.A.tab('set'); true`); await wait(800); await shot('win_update_available');
       await js(`UI.A.updInstall(); true`);
-      for (let i = 0; i < 120 && !lastUpdateFile; i++) await wait(1000);
-      report.push('update downloaded: ' + JSON.stringify(lastUpdateFile) + ' status: ' + await js('Updates.status'));
+      for (let i = 0; i < 120 && !lastUpdateFile && !lastUpdateError; i++) await wait(1000);
+      report.push('update downloaded: ' + JSON.stringify(lastUpdateFile) + ' status: ' + await js('Updates.status') + (lastUpdateError ? ' error: ' + lastUpdateError : ''));
       await js(`UI.A.theme('kitty'); UI.A.tab('np'); true`); await wait(1500); await shot('win_kitty');
     } catch (err) {
       report.push('ERROR ' + (err && err.stack || err));

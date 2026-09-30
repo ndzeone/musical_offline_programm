@@ -16,7 +16,7 @@ done
 adb shell content call --uri content://media --method scan_volume --arg external_primary > /dev/null 2>&1 || true
 # ждём, пока медиатека увидит все три трека
 for i in $(seq 1 30); do
-  N=$(adb shell content query --uri content://media/external/audio/media --projection title 2>/dev/null | grep -c "Row:")
+  N=$(adb shell content query --uri content://media/external/audio/media --projection title:is_music 2>/dev/null | grep -c "is_music=1")
   [ "${N:-0}" -ge 3 ] && break
   sleep 2
 done
