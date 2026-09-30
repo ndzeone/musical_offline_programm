@@ -102,6 +102,7 @@ async function main() {
 
   await js('UI.A.next(); true'); await sleep(2500);
   check('next track', (await js('Player.current().title')).includes('Третий'), await js('Player.current().title'));
+  await js('Player.seek(0.5); true'); await sleep(400);      // «назад» в первые 3 секунды — предыдущий трек
   await js('UI.A.prev(); true'); await sleep(2500);
   check('previous track', (await js('Player.current().title')).includes('Второй'), await js('Player.current().title'));
   await js('Player.seek(20); true'); await sleep(1500);

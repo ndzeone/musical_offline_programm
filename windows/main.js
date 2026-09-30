@@ -2,6 +2,7 @@
 'use strict';
 const { app, BrowserWindow, WebContentsView, protocol, ipcMain, dialog, shell, net, nativeImage, Menu } = require('electron');
 const { spawn } = require('child_process');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
@@ -262,23 +263,32 @@ ipcMain.on('browserNav', (e, action) => {
 ipcMain.on('browserClose', () => { if (site && win) { try { win.contentView.removeChildView(site); } catch (e) {} } });
 
 // ---------- обновление: скачать установщик и запустить его ----------
-async function downloadTo(url, file, onProgress) {
-  const r = await net.fetch(url);
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const total = +r.headers.get('content-length') || 0;
-  const out = fs.createWriteStream(file);
-  const reader = r.body.getReader();
-  let done = 0, last = -1;
-  for (;;) {
-    const { value, done: end } = await reader.read();
-    if (end) break;
-    if (!out.write(Buffer.from(value))) await new Promise((res) => out.once('drain', res));
-    done += value.length;
-    const pct = total ? Math.floor(done * 100 / total) : 0;
-    if (pct !== last) { last = pct; onProgress(pct / 100); }
-  }
-  await new Promise((res, rej) => out.end((err) => (err ? rej(err) : res())));
-  return done;
+// Скачивание через https из Node: сам проходит переадресации GitHub на хранилище файлов
+function downloadTo(url, file, onProgress, hops) {
+  return new Promise((resolve, reject) => {
+    if ((hops || 0) > 6) return reject(new Error('слишком много переадресаций'));
+    const req = https.get(url, { headers: { 'User-Agent': 'MuzykaOffline/' + app.getVersion() + ' (Windows)', Accept: 'application/octet-stream' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return resolve(downloadTo(new URL(res.headers.location, url).toString(), file, onProgress, (hops || 0) + 1));
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+      const total = +res.headers['content-length'] || 0;
+      const out = fs.createWriteStream(file);
+      let done = 0, last = -1;
+      res.on('data', (chunk) => {
+        done += chunk.length;
+        const pct = total ? Math.floor(done * 100 / total) : 0;
+        if (pct !== last) { last = pct; onProgress(pct / 100); }
+      });
+      res.pipe(out);
+      out.on('finish', () => out.close(() => resolve(done)));
+      out.on('error', reject);
+      res.on('error', reject);
+    });
+    req.setTimeout(60000, () => req.destroy(new Error('нет ответа')));
+    req.on('error', reject);
+  });
 }
 ipcMain.on('installUpdate', async (e, url, name) => {
   try {
