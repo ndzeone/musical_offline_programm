@@ -19,6 +19,8 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
+import android.webkit.CookieManager;
+import android.webkit.PermissionRequest;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -31,6 +33,10 @@ import android.widget.FrameLayout;
 import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +53,8 @@ public class MainActivity extends Activity implements Engine.Listener {
 
     FrameLayout root;
     WebView web;
+    WebView browser;                 // сайты площадок внутри программы
+    private int browserProgress = 0;
     volatile String insetsJson = "";
     private final ExecutorService io = Executors.newFixedThreadPool(2);
     private String pendingScan, pendingExport, pendingImport, exportPayload;
@@ -256,6 +264,11 @@ public class MainActivity extends Activity implements Engine.Listener {
     @Override protected void onDestroy() {
         Engine e = Engine.get(this);
         if (e.listener == this) e.listener = null;
+        if (browser != null) {
+            root.removeView(browser);
+            browser.destroy();
+            browser = null;
+        }
         if (web != null) {
             root.removeView(web);
             web.destroy();
@@ -365,6 +378,192 @@ public class MainActivity extends Activity implements Engine.Listener {
                 }
             });
         }
+    }
+
+    // ---------- браузер внутри программы ----------
+
+    @SuppressWarnings("deprecation")
+    private void createBrowser() {
+        browser = new WebView(this);
+        browser.setBackgroundColor(Color.WHITE);
+        WebSettings s = browser.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
+        s.setSupportZoom(true);
+        s.setBuiltInZoomControls(true);
+        s.setDisplayZoomControls(false);
+        s.setSupportMultipleWindows(false);
+        // сайты не должны думать, что это «урезанный» встроенный браузер
+        s.setUserAgentString(s.getUserAgentString().replace("; wv)", ")"));
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(browser, true);
+        browser.setWebViewClient(new WebViewClient() {
+            @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                String u = r.getUrl().toString();
+                if (u.startsWith("http://") || u.startsWith("https://")) return false;
+                openScheme(u);
+                return true;
+            }
+            @Override public void onPageStarted(WebView v, String url, android.graphics.Bitmap icon) { browserEvent(true); }
+            @Override public void onPageFinished(WebView v, String url) { browserEvent(false); }
+            @Override public void doUpdateVisitedHistory(WebView v, String url, boolean reload) { browserEvent(null); }
+            @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail d) {
+                if (v == browser) {
+                    root.removeView(browser);
+                    browser.destroy();
+                    browser = null;
+                    js("window.__nbEvent && window.__nbEvent('browser', {closed: true})");
+                }
+                return true;
+            }
+        });
+        browser.setWebChromeClient(new WebChromeClient() {
+            @Override public void onReceivedTitle(WebView v, String title) { browserEvent(null); }
+            @Override public void onProgressChanged(WebView v, int p) {
+                if (Math.abs(p - browserProgress) >= 10 || p == 100) { browserProgress = p; browserEvent(p < 100 ? Boolean.TRUE : null); }
+            }
+            @Override public void onPermissionRequest(PermissionRequest req) {
+                // защищённая музыка (как в Spotify) — можно; камера и микрофон — нет
+                for (String res : req.getResources()) {
+                    if (!PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID.equals(res)) { req.deny(); return; }
+                }
+                req.grant(req.getResources());
+            }
+        });
+        browser.setDownloadListener((url, ua, cd, mime, len) -> openExternal(url));
+        root.addView(browser, new FrameLayout.LayoutParams(1, 1));
+    }
+
+    /** Ссылки вида spotify:, vk:, intent:// — в приложения. */
+    private void openScheme(String u) {
+        try {
+            if (u.startsWith("intent:")) {
+                Intent i = Intent.parseUri(u, Intent.URI_INTENT_SCHEME);
+                try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return; } catch (Exception e) {
+                    String fb = i.getStringExtra("browser_fallback_url");
+                    if (fb != null && browser != null) browser.loadUrl(fb);
+                    return;
+                }
+            }
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception ignored) { }
+    }
+
+    private void browserEvent(Boolean loading) {
+        WebView b = browser;
+        if (b == null) return;
+        try {
+            JSONObject o = new JSONObject();
+            o.put("url", b.getUrl() == null ? "" : b.getUrl());
+            o.put("title", b.getTitle() == null ? "" : b.getTitle());
+            o.put("canBack", b.canGoBack());
+            o.put("canFwd", b.canGoForward());
+            if (loading != null) o.put("loading", loading.booleanValue());
+            o.put("progress", browserProgress / 100.0);
+            js("window.__nbEvent && window.__nbEvent('browser'," + q(o.toString()) + ")");
+        } catch (Exception ignored) { }
+    }
+
+    /** Прямоугольник из страницы (в её точках) → место браузера на экране. */
+    private void placeBrowser(String rectJson) {
+        if (browser == null || web == null) return;
+        try {
+            JSONObject r = new JSONObject(rectJson);
+            double vw = r.optDouble("vw", 0);
+            double k = vw > 0 ? web.getWidth() / vw : getResources().getDisplayMetrics().density;
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams((int) Math.round(r.optDouble("w") * k), (int) Math.round(r.optDouble("h") * k));
+            lp.leftMargin = (int) Math.round(r.optDouble("x") * k);
+            lp.topMargin = (int) Math.round(r.optDouble("y") * k);
+            browser.setLayoutParams(lp);
+        } catch (Exception ignored) { }
+    }
+
+    void browserOpen(String url, String rect) {
+        runOnUiThread(() -> {
+            if (browser == null) createBrowser();
+            placeBrowser(rect);
+            browser.setVisibility(View.VISIBLE);
+            browser.bringToFront();
+            // тот же сайт уже открыт — показываем как есть (музыка и вход сохраняются)
+            boolean same = browser.getUrl() != null && url.equals(lastBrowserStart);
+            if (!same) browser.loadUrl(url);
+            lastBrowserStart = url;
+            browserEvent(null);
+        });
+    }
+    private String lastBrowserStart = "";
+
+    void browserBounds(String rect) { runOnUiThread(() -> placeBrowser(rect)); }
+
+    void browserNav(String action) {
+        runOnUiThread(() -> {
+            if (browser == null) return;
+            switch (action == null ? "" : action) {
+                case "back": if (browser.canGoBack()) browser.goBack(); break;
+                case "forward": if (browser.canGoForward()) browser.goForward(); break;
+                case "reload": browser.reload(); break;
+                case "stop": browser.stopLoading(); break;
+                default: break;
+            }
+        });
+    }
+
+    /** Закрыть — спрятать: страница остаётся (если на сайте играет музыка, она не прервётся). */
+    void browserClose() { runOnUiThread(() -> { if (browser != null) browser.setVisibility(View.GONE); }); }
+
+    // ---------- обновление из выпуска на GitHub ----------
+
+    void installUpdate(String url, String name) {
+        io.execute(() -> {
+            File dir = UpdateFiles.dir(this);
+            File f = new File(dir, "update.apk");
+            HttpURLConnection c = null;
+            try {
+                if (!dir.exists() && !dir.mkdirs()) throw new Exception("no dir");
+                c = (HttpURLConnection) new URL(url).openConnection();
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(30000);
+                c.setInstanceFollowRedirects(true);
+                c.setRequestProperty("User-Agent", "MuzykaOffline (Android)");
+                int code = c.getResponseCode();
+                if (code != 200) throw new Exception("HTTP " + code);
+                long total = c.getContentLengthLong(), done = 0;
+                int lastPct = -1;
+                try (java.io.InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(f)) {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        done += n;
+                        int pct = total > 0 ? (int) (done * 100 / total) : 0;
+                        if (pct != lastPct && pct % 2 == 0) {
+                            lastPct = pct;
+                            js("window.__nbEvent && window.__nbEvent('update', {phase: 'progress', progress: " + (pct / 100.0) + "})");
+                        }
+                    }
+                }
+                android.content.pm.PackageInfo pi = getPackageManager().getPackageArchiveInfo(f.getPath(), 0);
+                if (pi == null) throw new Exception("not an apk");
+                Log.i("MuzykaUpdate", "downloaded " + pi.packageName + " " + pi.versionName + " (" + f.length() + " bytes)");
+                js("window.__nbEvent && window.__nbEvent('update', {phase: 'installing', version: " + q(String.valueOf(pi.versionName)) + "})");
+                Uri u = Uri.parse("content://" + getPackageName() + ".updates/update.apk");
+                Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(u, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                runOnUiThread(() -> {
+                    try { startActivity(i); } catch (Exception e) {
+                        js("window.__nbEvent && window.__nbEvent('update', {phase: 'error', message: 'Android не открыл установку'})");
+                    }
+                });
+            } catch (Exception e) {
+                Log.w("MuzykaUpdate", "download", e);
+                js("window.__nbEvent && window.__nbEvent('update', {phase: 'error', message: 'Не получилось скачать обновление. Проверь интернет'})");
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        });
     }
 
     // ---------- разное ----------

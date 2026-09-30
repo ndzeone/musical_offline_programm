@@ -20,5 +20,12 @@ contextBridge.exposeInMainWorld('ElectronNative', {
     return 'app://local/media/' + encodeURIComponent(uri);
   },
   openLink: (url) => ipcRenderer.invoke('openLink', url),
-  ready: () => ipcRenderer.send('ready')
+  ready: () => ipcRenderer.send('ready'),
+  // 2.4: события (браузер, загрузка обновления), обновление, браузер внутри программы
+  onEvent: (fn) => ipcRenderer.on('nb-event', (e, name, payload) => fn(name, payload)),
+  installUpdate: (url, name) => ipcRenderer.send('installUpdate', url, name),
+  browserOpen: (url, rect) => ipcRenderer.send('browserOpen', url, rect),
+  browserBounds: (rect) => ipcRenderer.send('browserBounds', rect),
+  browserNav: (action) => ipcRenderer.send('browserNav', action),
+  browserClose: () => ipcRenderer.send('browserClose')
 });

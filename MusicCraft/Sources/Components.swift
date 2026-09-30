@@ -478,11 +478,18 @@ struct TField: View {
 struct PanelBackground: View {
     @Environment(\.theme) private var theme
     @Environment(\.visual) private var visual
+    @Environment(\.liquidGlass) private var liquid
     var radius: CGFloat?
     var shadow = true
+    /// Панель, которая становится жидким стеклом, если оно включено (нижний плеер)
+    var glassy = false
 
     var body: some View {
-        if theme.pixel {
+        if glassy && liquid {
+            let shape = RoundedRectangle(cornerRadius: radius ?? theme.radius, style: .continuous)
+            LiquidGlass(shape: shape, tint: theme.pixel ? Color.black.opacity(0.3) : Color(hex: theme.panel, alpha: 0.22))
+                .shadow(color: .black.opacity(shadow ? 0.25 : 0), radius: 18, y: 8)
+        } else if theme.pixel {
             BevelBox(fill: 0xC6C6C6, light: 0xFFFFFF, dark: 0x555555, w: 3)
         } else {
             let r = radius ?? theme.radius
@@ -537,15 +544,20 @@ struct TToggle: View {
     let title: String
     var subtitle: String?
     @Binding var isOn: Bool
+    var badge: String?
 
     var body: some View {
         if theme.pixel {
             MCButton("\(title): \(isOn ? "ВКЛ" : "ВЫКЛ")", height: 36, size: 8, selected: isOn) { isOn.toggle() }
+                .overlay(alignment: .topTrailing) { if let badge { NewBadge(feature: badge).offset(x: -4, y: -8) } }
         } else {
             Button { isOn.toggle() } label: {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(title).font(theme.body(13)).foregroundStyle(Color(hex: theme.panelText))
+                        HStack(spacing: 8) {
+                            Text(title).font(theme.body(13)).foregroundStyle(Color(hex: theme.panelText))
+                            if let badge { NewBadge(feature: badge) }
+                        }
                         if let subtitle {
                             Text(subtitle).font(theme.body(11)).foregroundStyle(Color(hex: theme.panelDim))
                                 .fixedSize(horizontal: false, vertical: true)

@@ -486,7 +486,8 @@ struct GeneralSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionLabel(text: "Окно и уведомления")
+            UpdatesSection()
+            SectionLabel(text: "Окно и уведомления").padding(.top, 6)
             Grid(horizontalSpacing: 10, verticalSpacing: 10) {
                 GridRow {
                     TToggle(title: "Поверх всех окон", subtitle: "Плеер не прячется за другими программами", isOn: $m.alwaysOnTop)
@@ -535,6 +536,20 @@ struct LookSettings: View {
                     BackgroundCard(bg: b, selected: m.background == b) { m.background = b }
                 }
             }
+            HStack(spacing: 8) {
+                SectionLabel(text: "Панели")
+                NewBadge(feature: "roundSidebar")
+            }
+            .padding(.top, 8)
+            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                GridRow {
+                    TToggle(title: "Закруглённая боковая панель", subtitle: "Меню — отдельной карточкой со скруглёнными углами",
+                            isOn: $m.sidebarRounded, badge: "roundSidebar")
+                    TToggle(title: "Жидкое стекло", subtitle: "Меню и плеер — прозрачное стекло с бликом, как в macOS 26",
+                            isOn: $m.liquidGlass, badge: "liquidGlass")
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
             SectionLabel(text: "Раскладка экрана").padding(.top, 8)
             HStack(spacing: 12) {
                 ForEach(StageLayout.allCases) { l in
@@ -860,6 +875,7 @@ struct ModalHost: View {
             case .addAccount: AddAccountSheet()
             case .pasteLyrics: PasteLyricsSheet()
             case .newPlaylist(let add): NewPlaylistSheet(addCurrent: add)
+            case .update: UpdateSheet()
             }
         }
     }
@@ -1220,6 +1236,90 @@ struct LoginHint: View {
         .background {
             if theme.pixel { BevelBox(fill: 0xE0E0A0, light: 0xFFFFD0, dark: 0x8B8B50, border: nil) } else {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: platform.color, alpha: 0.14))
+            }
+        }
+    }
+}
+
+// MARK: - Обновления
+
+struct UpdatesSection: View {
+    @EnvironmentObject var m: PlayerModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                SectionLabel(text: "Обновления")
+                NewBadge(feature: "updates")
+            }
+            HStack(spacing: 12) {
+                Image(nsImage: AppLogo.image).resizable().frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 3) {
+                    TText("Музыка в офлайн \(Updates.current) · macOS", size: 14, title: true, onPanel: true)
+                    TText(status, size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if m.updateState.busy { ProgressView().controlSize(.small) }
+            }
+            HStack(spacing: 10) {
+                if case .available(let r) = m.updateState {
+                    TButton("Обновить до \(r.version)", icon: "arrow.down.circle.fill", prominent: true) { m.installUpdate() }
+                }
+                TButton("Проверить обновления", icon: "arrow.clockwise", prominent: !isAvailable) { m.checkUpdates(manual: true) }
+                    .disabled(m.updateState.busy)
+                Spacer()
+            }
+            TToggle(title: "Проверять автоматически", subtitle: "При запуске и раз в 6 часов", isOn: $m.autoUpdates)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var isAvailable: Bool { if case .available = m.updateState { return true }; return false }
+
+    private var status: String {
+        switch m.updateState {
+        case .checking: return "Проверяю GitHub…"
+        case .available(let r): return "Доступна версия \(r.version)"
+        case .downloading: return "Скачиваю обновление…"
+        case .installing: return "Устанавливаю — программа сейчас перезапустится"
+        case .latest(let d): return "У тебя последняя версия · проверено в \(d.formatted(date: .omitted, time: .shortened))"
+        case .failed(let e): return e
+        case .idle:
+            if let d = m.lastUpdateCheck { return "Последняя проверка: \(d.formatted(date: .abbreviated, time: .shortened))" }
+            return "Ещё не проверяли"
+        }
+    }
+}
+
+struct UpdateSheet: View {
+    @EnvironmentObject var m: PlayerModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let r: ReleaseInfo? = { if case .available(let x) = m.updateState { return x }; return nil }()
+        TPanel(title: "Доступна версия \(r?.version ?? "")", width: 520, onClose: { m.modal = nil }) {
+            TText("Сейчас у тебя \(Updates.current). Плейлисты, «Любимые», аккаунты и настройки сохранятся.",
+                  size: 12, color: theme.pixel ? 0x3F3F3F : theme.panelDim, onPanel: true)
+                .fixedSize(horizontal: false, vertical: true)
+            let notes = Updates.plainNotes(r?.notes ?? "")
+            if !notes.isEmpty {
+                TText(notes, size: 12, onPanel: true)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: theme.pixel ? 0 : 12, style: .continuous)
+                        .fill(Color(hex: theme.pixel ? 0x8B8B8B : theme.panelText, alpha: theme.pixel ? 0.35 : 0.06)))
+            }
+            HStack {
+                if m.updateState.busy {
+                    ProgressView().controlSize(.small)
+                    TText(m.updateState == .installing ? "Устанавливаю, сейчас перезапущусь…" : "Скачиваю…", size: 12, onPanel: true)
+                }
+                Spacer()
+                TButton("Позже") { m.skipUpdate() }.disabled(m.updateState.busy)
+                TButton("Обновить", icon: "arrow.down.circle.fill", prominent: true) { m.installUpdate() }.disabled(m.updateState.busy)
             }
         }
     }

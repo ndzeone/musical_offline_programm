@@ -128,4 +128,16 @@ final class Bridge {
     @JavascriptInterface public String insets() { return a.insetsJson; }
 
     @JavascriptInterface public void ready() { a.runOnUiThread(() -> a.root.requestApplyInsets()); }
+
+    // ---------- 2.4: обновления и браузер внутри программы ----------
+
+    @JavascriptInterface public void installUpdate(String url, String name) { a.installUpdate(url, name); }
+
+    @JavascriptInterface public void browserOpen(String url, String rect) { a.browserOpen(url, rect); }
+
+    @JavascriptInterface public void browserBounds(String rect) { a.browserBounds(rect); }
+
+    @JavascriptInterface public void browserNav(String action) { a.browserNav(action); }
+
+    @JavascriptInterface public void browserClose() { a.browserClose(); }
 }

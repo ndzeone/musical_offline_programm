@@ -19,9 +19,10 @@ struct RootView: View {
 
             HStack(spacing: 0) {
                 if m.showSidebar {
-                    Sidebar().frame(width: 240).transition(.move(edge: .leading).combined(with: .opacity))
+                    Sidebar().frame(width: 240).padding(m.sidebarRounded ? Self.floating : EdgeInsets())
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                 } else {
-                    SidebarRail().frame(width: 64).transition(.opacity)
+                    SidebarRail().frame(width: 64).padding(m.sidebarRounded ? Self.floating : EdgeInsets()).transition(.opacity)
                 }
                 VStack(spacing: 0) {
                     ZStack {
@@ -48,6 +49,7 @@ struct RootView: View {
         }
         .environment(\.theme, theme)
         .environment(\.visual, m.visual)
+        .environment(\.liquidGlass, m.liquidGlass)
         .animation(.easeOut(duration: 0.18), value: m.modal)
         .animation(.easeOut(duration: 0.2), value: m.page)
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: m.showSidebar)
@@ -57,6 +59,9 @@ struct RootView: View {
         }
         .onAppear { m.start() }
     }
+
+    /// Закруглённое меню — отдельная карточка с отступом от краёв окна
+    static let floating = EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 0)
 
     private func handleDrop(_ providers: [NSItemProvider]) {
         let group = DispatchGroup()
@@ -129,7 +134,7 @@ struct Sidebar: View {
                 SidebarContent().padding(.bottom, 10)
             }
 
-            SidebarRow(symbol: "gearshape.fill", title: "Настройки", selected: m.page == .settings) {
+            SidebarRow(symbol: "gearshape.fill", title: "Настройки", selected: m.page == .settings, dot: m.settingsDot) {
                 m.toggleSettings()
             }
             .padding(.top, 6)
@@ -141,22 +146,43 @@ struct Sidebar: View {
 }
 
 struct SidebarBackground: View {
+    @EnvironmentObject var m: PlayerModel
     @Environment(\.theme) private var theme
     @Environment(\.visual) private var visual
 
     var body: some View {
-        if theme.pixel {
-            Color(hex: 0x141414, alpha: 0.72)
-                .overlay(alignment: .trailing) { Color(hex: 0x5A5A5A).frame(width: 2) }
+        let shape = RoundedRectangle(cornerRadius: m.sidebarRounded ? (theme.pixel ? 14 : 22) : 0, style: .continuous)
+        if m.sidebarRounded {
+            fill(shape)
+                .overlay(shape.strokeBorder(border, lineWidth: theme.pixel ? 2 : 1))
+                .shadow(color: .black.opacity(0.3), radius: 18, y: 8)
+        } else {
+            fill(shape)
+                .overlay(alignment: .trailing) { edge }
                 .ignoresSafeArea()
+        }
+    }
+
+    @ViewBuilder private func fill(_ shape: RoundedRectangle) -> some View {
+        if m.liquidGlass {
+            LiquidGlass(shape: shape, tint: theme.pixel ? Color.black.opacity(0.35) : Color(hex: theme.panel, alpha: 0.25))
+        } else if theme.pixel {
+            shape.fill(Color(hex: 0x141414, alpha: 0.72))
         } else {
             ZStack {
-                if visual.glass { Rectangle().fill(.ultraThinMaterial) }
-                Color(hex: theme.panel, alpha: visual.glass ? theme.panelAlpha * 0.8 : min(0.94, theme.panelAlpha + 0.1))
+                if visual.glass { shape.fill(.ultraThinMaterial) }
+                shape.fill(Color(hex: theme.panel, alpha: visual.glass ? theme.panelAlpha * 0.8 : min(0.94, theme.panelAlpha + 0.1)))
             }
-            .overlay(alignment: .trailing) { Color(hex: theme.border, alpha: 0.18).frame(width: 1) }
-            .ignoresSafeArea()
         }
+    }
+
+    private var border: Color {
+        if theme.pixel { return Color(hex: 0x5A5A5A) }
+        return m.liquidGlass ? .white.opacity(0.3) : Color(hex: theme.border, alpha: 0.3)
+    }
+
+    @ViewBuilder private var edge: some View {
+        if theme.pixel { Color(hex: 0x5A5A5A).frame(width: 2) } else { Color(hex: theme.border, alpha: 0.18).frame(width: 1) }
     }
 }
 
@@ -284,6 +310,7 @@ struct SidebarRow: View {
     var check = false
     var sleeping = false
     var dim = false
+    var dot = false
     let action: () -> Void
     @State private var hover = false
 
@@ -302,6 +329,10 @@ struct SidebarRow: View {
                         slot(Image(systemName: "checkmark.seal.fill").font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color(hex: selected ? textColor : 0x3DDC84)))
                             .help("Вход выполнен")
+                    }
+                    if dot {
+                        slot(Circle().fill(Color(hex: selected ? textColor : (theme.pixel ? 0x80FF20 : theme.accent))).frame(width: 8, height: 8))
+                            .help("Есть новое")
                     }
                     if sleeping {
                         slot(Image(systemName: "moon.zzz.fill").font(.system(size: 10, weight: .bold))
@@ -1167,7 +1198,7 @@ struct PlayerBar: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
-        .background(PanelBackground(radius: min(theme.radius + 6, 26)))
+        .background(PanelBackground(radius: min(theme.radius + 6, 26), glassy: true))
     }
 }
 

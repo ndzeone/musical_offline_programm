@@ -153,6 +153,38 @@ async function main() {
   await js("UI.A.tab('np'); true"); await sleep(2000); shot('11_landscape');
   adb('shell settings put system user_rotation 0'); await sleep(2000);
 
+  // 2.4: браузер внутри программы
+  await js("UI.A.tab('apps'); true"); await sleep(1500);
+  await js("UI.A.openLink('https://example.com/'); true"); await sleep(9000);
+  const br = JSON.parse(await js('JSON.stringify(window.__brState())'));
+  check('in-app browser opened the site', br.open && /Example Domain/i.test(br.title || ''), JSON.stringify(br));
+  shot('13_browser');
+  await js('window.__back(); true'); await sleep(1500);
+  const br2 = JSON.parse(await js('JSON.stringify(window.__brState())'));
+  check('back closes the in-app browser', !br2.open, JSON.stringify(br2));
+
+  // 2.4: обновления с GitHub (как будто стоит старая версия) → загрузка → установка Android
+  let upd = null;
+  for (let i = 0; i < 3; i++) {
+    upd = JSON.parse(await js("Updates.check(true, {current: '2.0.0'}).then(function (s) { return JSON.stringify({s: s, v: Updates.latest && Updates.latest.version, asset: Updates.latest && Updates.latest.asset && Updates.latest.asset.name, err: Updates.error}); })"));
+    if (upd.s === 'available') break;
+    await sleep(8000);
+  }
+  check('update check finds a newer release on GitHub', upd.s === 'available' && /Android\.apk$/.test(upd.asset || ''), JSON.stringify(upd));
+  await js("UI.A.tab('set'); true"); await sleep(1500); shot('14_update_available');
+  await js('UI.A.updInstall(); true');
+  let top = '';
+  for (let i = 0; i < 60; i++) {
+    await sleep(1000);
+    const d = adb('shell dumpsys activity activities');
+    top = (d.match(/(topResumedActivity|mResumedActivity)[^\n]*/) || [''])[0];
+    if (/packageinstaller/i.test(top)) break;
+  }
+  check('downloaded update opens the Android installer', /packageinstaller/i.test(top), top.trim());
+  shot('15_installer');
+  adb('shell input keyevent KEYCODE_BACK'); await sleep(1500);
+  launch(); await sleep(3000);
+
   const errs = adb('logcat -d -s MuzykaWeb:I').split('\n').filter((l) => /ERROR|Uncaught|console.error/.test(l));
   check('no errors in the page', errs.length === 0, errs.slice(0, 5).join(' | '));
   const crash = adb('logcat -d -b crash');

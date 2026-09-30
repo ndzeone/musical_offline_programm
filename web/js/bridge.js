@@ -25,6 +25,9 @@
     (listeners[name] || []).forEach(function (f) { try { f(v); } catch (e) { console.error(e); } });
   };
 
+  // События от Windows (браузер внутри программы, загрузка обновления)
+  if (E && E.onEvent) E.onEvent(function (name, payload) { window.__nbEvent(name, payload); });
+
   function acall(fn, args) {
     return new Promise(function (res) {
       var id = 'r' + (++seq);
@@ -54,9 +57,9 @@
     kind: kind,
     on: function (name, f) { (listeners[name] = listeners[name] || []).push(f); },
     version: function () {
-      if (A) return sync('version', [], '2.3');
+      if (A) return sync('version', [], '2.4.0');
       if (E && E.version) return E.version;
-      return '2.3';
+      return window.__mockVersion || '2.4.0';
     },
     http: function (url, headers) {
       var h = JSON.stringify(headers || {});
@@ -125,6 +128,32 @@
       if (A) return sync('openLink', [url]);
       if (E) return E.openLink(url);
       window.open(url, '_blank');
+    },
+    // Обновление: скачать установщик из выпуска на GitHub и запустить его
+    canSelfUpdate: function () { return !!(A || (E && E.installUpdate)); },
+    installUpdate: function (url, name) {
+      if (A) { sync('installUpdate', [url, name || 'update.apk']); return true; }
+      if (E && E.installUpdate) { E.installUpdate(url, name); return true; }
+      return false;
+    },
+    // Браузер внутри программы: страница площадки поверх интерфейса в прямоугольнике rect
+    hasBrowser: function () { return !!(A || (E && E.browserOpen)); },
+    browserOpen: function (url, rect) {
+      var r = JSON.stringify(rect || {});
+      if (A) return sync('browserOpen', [url, r]);
+      if (E && E.browserOpen) return E.browserOpen(url, rect);
+    },
+    browserBounds: function (rect) {
+      if (A) return sync('browserBounds', [JSON.stringify(rect)]);
+      if (E && E.browserBounds) return E.browserBounds(rect);
+    },
+    browserNav: function (action) {
+      if (A) return sync('browserNav', [action]);
+      if (E && E.browserNav) return E.browserNav(action);
+    },
+    browserClose: function () {
+      if (A) return sync('browserClose', []);
+      if (E && E.browserClose) return E.browserClose();
     },
     keepScreenOn: function (on) { if (A) sync('keepScreenOn', [!!on]); },
     systemBars: function (lightIcons) { if (A) sync('systemBars', [!!lightIcons]); },

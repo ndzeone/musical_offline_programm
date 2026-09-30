@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 env:
-  VERSION_NAME: '2.3.0'
-  VERSION_CODE: '203'
+  VERSION_NAME: '2.4.0'
+  VERSION_CODE: '204'
 
 jobs:
   android:
@@ -99,6 +99,10 @@ jobs:
           MUZ_SNAPSHOT="$GITHUB_WORKSPACE/windows-shots" "dist/win-unpacked/MuzykaOffline.exe" || true
           cat "$GITHUB_WORKSPACE/windows-shots/report.txt"
           grep -q "library saved: true" "$GITHUB_WORKSPACE/windows-shots/report.txt"
+          grep -q '"title":"Example Domain"' "$GITHUB_WORKSPACE/windows-shots/report.txt"
+          grep -q "browser closed: true" "$GITHUB_WORKSPACE/windows-shots/report.txt"
+          grep -q '"s":"available"' "$GITHUB_WORKSPACE/windows-shots/report.txt"
+          grep -q 'update downloaded: {"file"' "$GITHUB_WORKSPACE/windows-shots/report.txt"
       - name: Проверка установщика (тихая установка)
         shell: pwsh
         timeout-minutes: 8

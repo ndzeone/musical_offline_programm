@@ -19,6 +19,8 @@
     document.body.dataset.theme = s.theme;
     document.body.classList.toggle('eco', s.perf === 'eco');
     document.body.classList.toggle('noblur', !perf.blur);
+    document.body.classList.toggle('round', !!s.roundPanel);
+    document.body.classList.toggle('glass', !!s.glass);
     document.documentElement.style.setProperty('--scale', s.textScale);
     if (S.scene) { S.scene.id = s.background; S.scene.fps = perf.fps; S.scene.dpr = perf.dpr; }
     NB.systemBars(s.theme === 'kitty');
@@ -78,12 +80,12 @@
   ];
   function renderTabs() {
     $('tabs').innerHTML = TABS.map(function (t) {
-      return '<button class="tab' + (S.tab === t.id ? ' on' : '') + '" data-a="tab" data-x="' + t.id + '">' + icon(t.ic) + '<span>' + t.name + '</span></button>';
+      return '<button class="tab' + (S.tab === t.id ? ' on' : '') + '" data-a="tab" data-x="' + t.id + '">' + icon(t.ic) + '<span>' + t.name + '</span>' + tabDot(t.id) + '</button>';
     }).join('');
     var logo = LOGO();
     $('side').innerHTML = '<div class="side-logo"><img src="' + logo + '" alt="">Музыка<br>в офлайн</div>' +
       TABS.map(function (t) {
-        return '<button class="side-item' + (S.tab === t.id && !S.playlist ? ' on' : '') + '" data-a="tab" data-x="' + t.id + '">' + icon(t.ic) + t.name + '</button>';
+        return '<button class="side-item' + (S.tab === t.id && !S.playlist ? ' on' : '') + '" data-a="tab" data-x="' + t.id + '">' + icon(t.ic) + t.name + tabDot(t.id) + '</button>';
       }).join('') +
       '<div class="label" style="margin:18px 10px 6px">Плейлисты</div>' +
       Store.playlists.map(function (p) {
@@ -91,7 +93,12 @@
       }).join('') +
       '<button class="side-item" data-a="newPl">' + icon('plus') + 'Новый плейлист</button>';
   }
+  function tabDot(id) {
+    if (id !== 'set') return '';
+    return Updates.status === 'available' ? '<i class="dot upd"></i>' : anyNew() ? '<i class="dot"></i>' : '';
+  }
   function go(tab) {
+    closeBrowser();
     S.tab = tab; S.playlist = null; S.focus = false;
     Store.settings.lastTab = tab; Store.saveSettings();
     render();
@@ -282,6 +289,9 @@
     var now = Player.now(), el = $('mini'), desk = isDesk();
     var show = now && (S.tab !== 'np' || S.playlist || desk);
     el.className = show ? (desk ? 'desk' : '') : 'off';
+    var had = document.body.classList.contains('withmini');
+    document.body.classList.toggle('withmini', !!show);
+    if (BR.open && had !== !!show) brSync();
     if (!now) { el.innerHTML = ''; return; }
     var playing = Player.isPlaying();
     el.innerHTML = '<div class="art" data-a="tab" data-x="np">' + (now.art ? '<img src="' + esc(now.art) + '">' : coverImg(now)) + '</div>' +
@@ -439,12 +449,16 @@
         }).join('') + '</div>' : '<div class="empty" style="padding:18px">Сейчас ничего не играет.</div>';
       }
     } else {
-      h += '<div class="sub" style="margin:4px 4px 12px">Треки площадок из твоих плейлистов открываются на сайте. Полноценные аккаунты с текстом — в версии для Mac.</div>';
+      h += '<div class="sub" style="margin:4px 4px 12px">Сайты площадок открываются прямо здесь, во встроенном браузере: вход в аккаунт запоминается. Полноценные аккаунты с текстом песен — в версии для Mac.</div>';
     }
-    h += '<div class="label">Открыть</div><div class="list">' + Object.keys(PLATFORMS).map(function (id) {
-      var p = PLATFORMS[id];
+    var installed = {};
+    (NB.installedApps() || []).forEach(function (a) { installed[a.pkg] = 1; });
+    h += '<div class="label">Открыть в программе' + newBadge('browser') + '</div><div class="list">' + Object.keys(PLATFORMS).map(function (id) {
+      var p = PLATFORMS[id], app = NB.kind === 'android' && installed[p.pkg];
       return '<div class="row" data-a="openPlatform" data-x="' + id + '">' + '<div class="art" style="display:grid;place-items:center">' + badge(id, 46) + '</div>' +
-        '<div class="meta"><div class="t">' + esc(p.name) + '</div><div class="a">' + (NB.kind === 'android' ? 'Открыть приложение' : 'Открыть сайт') + '</div></div>' + icon('open').replace('<svg', '<svg style="width:20px;height:20px;opacity:.7"') + '</div>';
+        '<div class="meta"><div class="t">' + esc(p.name) + '</div><div class="a">' + esc(hostOf(p.home)) + ' · во встроенном браузере</div></div>' +
+        (app ? '<button class="btn small" data-a="openApp" data-x="' + esc(p.pkg) + '" title="Открыть приложение">Приложение</button>'
+             : icon('globe').replace('<svg', '<svg style="width:20px;height:20px;opacity:.7"')) + '</div>';
     }).join('') + '</div></div>';
     return h;
   }
@@ -462,12 +476,17 @@
     var perf = '<div class="seg">' + Object.keys(PERF).map(function (k) {
       return '<button class="' + (s.perf === k ? 'on' : '') + '" data-a="perf" data-x="' + k + '">' + PERF[k].name + '</button>';
     }).join('') + '</div><div class="sub" style="margin:8px 4px 0">' + PERF[s.perf].tag + ' · ' + PERF[s.perf].fps + ' кадров</div>';
-    function sw(key, title, desc) {
-      return '<div class="set-row"><div><div>' + title + '</div>' + (desc ? '<div class="d">' + desc + '</div>' : '') + '</div><button class="switch' + (s[key] ? ' on' : '') + '" data-a="sw" data-x="' + key + '"></button></div>';
+    function sw(key, title, desc, feature) {
+      return '<div class="set-row"><div><div>' + title + (feature ? newBadge(feature) : '') + '</div>' + (desc ? '<div class="d">' + desc + '</div>' : '') + '</div><button class="switch' + (s[key] ? ' on' : '') + '" data-a="sw" data-x="' + key + '"></button></div>';
     }
+    var desk = isDesk();
     return '<div class="scroll"><div class="h1 mc-shadow">Настройки</div>' +
+      updatesPanel() +
       '<div class="label">Тема</div>' + themes +
       '<div class="label">Живой фон</div>' + bgs +
+      '<div class="label">Панели</div><div class="panel">' +
+      sw('roundPanel', 'Закруглённая панель', desk ? 'Боковое меню — отдельной карточкой со скруглёнными углами' : 'Нижняя панель парит над экраном, углы скруглены', 'roundPanel') +
+      sw('glass', 'Жидкое стекло', 'Прозрачные панели с бликом, как в новых iPhone и Mac', 'glass') + '</div>' +
       '<div class="label">Производительность</div>' + perf +
       '<div class="label">Текст песни</div><div class="panel">' +
       '<div class="set-row"><div>Размер текста</div><div style="width:50%"><input type="range" min="0.7" max="1.5" step="0.05" value="' + s.textScale + '" data-in="textScale"></div></div>' +
@@ -481,8 +500,56 @@
       '<div class="d" style="padding:4px 2px">Басы работают для твоих файлов. Музыку приложений играют сами приложения.</div></div>' +
       '<div class="label">Библиотека</div><div class="panel"><div class="sub" style="color:var(--panel-dim);margin-bottom:12px">Плейлисты и «Любимые» сохраняются сами, прошлая версия всегда остаётся резервной копией. Копию можно перенести на Mac или Windows.</div>' +
       '<div class="pl-actions" style="margin:0"><button class="btn" data-a="exportLib">' + icon('upload') + 'Сохранить копию</button><button class="btn" data-a="importLib">' + icon('download') + 'Загрузить копию</button></div></div>' +
-      '<div class="label">О программе</div><div class="panel"><div class="sub" style="color:var(--panel-dim)">Музыка в офлайн ' + esc(NB.version()) + ' · ' + (NB.kind === 'android' ? 'Android' : NB.kind === 'windows' ? 'Windows' : 'браузер') + '</div></div></div>';
+      '</div>';
   }
+  function sysName() { return NB.kind === 'android' ? 'Android' : NB.kind === 'windows' ? 'Windows' : 'браузер'; }
+  function updStatusText() {
+    var u = Updates, l = u.latest;
+    if (u.status === 'checking') return 'Проверяю GitHub…';
+    if (u.status === 'available') return 'Доступна версия ' + esc(l.version);
+    if (u.status === 'downloading') return 'Скачиваю ' + esc(l ? l.version : '') + '… ' + Math.round(u.progress * 100) + '%';
+    if (u.status === 'installing') return NB.kind === 'android' ? 'Открываю установку — нажми «Установить»' : 'Устанавливаю, программа сейчас перезапустится';
+    if (u.status === 'latest') return 'У тебя последняя версия · проверено в ' + new Date(u.checkedAt).toTimeString().slice(0, 5);
+    if (u.status === 'error') return esc(u.error);
+    var last = +Store.settings.lastUpdateCheck;
+    return last ? 'Последняя проверка: ' + new Date(last).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : 'Ещё не проверяли';
+  }
+  function updatesPanel() {
+    var u = Updates, busy = u.status === 'checking' || u.status === 'downloading' || u.status === 'installing';
+    var prog = u.status === 'downloading' ? '<div class="upd-prog"><i style="width:' + Math.round(u.progress * 100) + '%"></i></div>' : '';
+    return '<div id="updpanel"><div class="label">Обновления' + newBadge('updates') + '</div><div class="panel upd' + (u.status === 'available' ? ' hot' : '') + '">' +
+      '<div class="set-row" style="border-top:0;padding-top:0"><div><div>Музыка в офлайн ' + esc(Updates.current()) + ' · ' + sysName() + '</div><div class="d" id="updstatus">' + updStatusText() + '</div></div></div>' + prog +
+      '<div class="pl-actions" style="margin:4px 0 0">' +
+      (u.status === 'available' ? '<button class="btn primary" data-a="updInstall">' + icon('download') + 'Обновить до ' + esc(u.latest.version) + '</button>' : '') +
+      '<button class="btn' + (u.status === 'available' ? '' : ' primary') + '" data-a="updCheck"' + (busy ? ' disabled' : '') + '>' + icon('refresh') + 'Проверить обновления</button></div>' +
+      '<div class="set-row"><div><div>Проверять автоматически</div><div class="d">При запуске и раз в 6 часов</div></div><button class="switch' + (Store.settings.autoUpdates ? ' on' : '') + '" data-a="sw" data-x="autoUpdates"></button></div></div></div>';
+  }
+  function updateSheet() {
+    var l = Updates.latest; if (!l) return;
+    var notes = Updates.notesText(l.notes);
+    S.updSheet = true;
+    sheet('<div class="h2">' + icon('sparkle').replace('<svg', '<svg style="width:20px;height:20px;display:inline-block;vertical-align:-3px;margin-right:6px;color:var(--accent)"') + 'Доступна версия ' + esc(l.version) + '</div>' +
+      '<div class="sub" style="margin:6px 0 10px;color:var(--panel-dim)">Сейчас у тебя ' + esc(Updates.current()) + '. Плейлисты, «Любимые» и настройки сохранятся.</div>' +
+      (notes ? '<div class="upd-notes">' + esc(notes) + '</div>' : '') +
+      '<div id="updsheet">' + updSheetBody() + '</div>');
+  }
+  function updSheetBody() {
+    var u = Updates;
+    if (u.status === 'downloading' || u.status === 'installing') {
+      return '<div class="sub" style="margin:12px 0 8px">' + updStatusText() + '</div><div class="upd-prog"><i style="width:' + Math.round(u.progress * 100) + '%"></i></div>';
+    }
+    return '<div class="pl-actions" style="margin-top:12px"><button class="btn primary" data-a="updInstall">' + icon('download') + 'Обновить</button>' +
+      '<button class="btn" data-a="updLater">Позже</button></div>' + (u.status === 'error' ? '<div class="d" style="margin-top:8px">' + esc(u.error) + '</div>' : '');
+  }
+  Updates.onFound = function () { if (!BR.open && !$('modal').classList.contains('on')) updateSheet(); };
+  Updates.onChange(function () {
+    renderTabs();
+    var up = $('updpanel');
+    if (up) { var t = document.createElement('div'); t.innerHTML = updatesPanel(); up.parentNode.replaceChild(t.firstChild, up); }
+    var box = $('updsheet');
+    if (box && S.updSheet) box.innerHTML = updSheetBody();
+  });
+
   function drawPreviews() {
     document.querySelectorAll('canvas[data-pv]').forEach(function (c) {
       var id = c.getAttribute('data-pv');
@@ -500,7 +567,7 @@
     m.classList.add('on');
     hydrateArt(m);
   }
-  function closeSheet() { var m = $('modal'); m.classList.remove('on'); m.innerHTML = ''; }
+  function closeSheet() { var m = $('modal'); m.classList.remove('on'); m.innerHTML = ''; S.updSheet = false; }
   function menuItem(ic, text, act, x) { return '<button class="menu-item" data-a="' + act + '"' + (x != null ? ' data-x="' + esc(x) + '"' : '') + '>' + icon(ic) + '<span>' + text + '</span></button>'; }
 
   function addToSheet(track) {
@@ -521,6 +588,56 @@
       '<button class="btn" data-a="lyrNext">Другой вариант</button><button class="btn" data-a="lyrPaste">' + icon('clip') + 'Вставить свой</button></div>' +
       '<div class="set-row"><div>Сдвиг текста<div class="d" id="offv">' + (e.offset > 0 ? '+' : '') + (e.offset || 0).toFixed(1) + ' с</div></div><div style="width:55%"><input type="range" min="-5" max="5" step="0.1" value="' + (e.offset || 0) + '" data-in="offset"></div></div>');
   }
+
+  // ---------- браузер внутри программы (Android и Windows) ----------
+  var BR = { open: false, url: '', title: '', canBack: false, canFwd: false, loading: false, progress: 0 };
+  function hostOf(u) { var m = /^https?:\/\/([^\/?#]+)/i.exec(u || ''); return m ? m[1].replace(/^www\./, '') : ''; }
+  function brRect() {
+    var r = $('bview').getBoundingClientRect();
+    return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), vw: window.innerWidth, vh: window.innerHeight };
+  }
+  function brBar() {
+    $('brbar').innerHTML =
+      '<button class="icon-btn" data-a="brBack" title="Назад">' + icon('back') + '</button>' +
+      '<button class="icon-btn' + (BR.canFwd ? '' : ' dim') + '" data-a="brFwd" title="Вперёд">' + icon('fwd') + '</button>' +
+      '<button class="icon-btn" data-a="brReload" title="' + (BR.loading ? 'Остановить' : 'Обновить') + '">' + icon(BR.loading ? 'close' : 'refresh') + '</button>' +
+      '<div class="br-title"><div class="t ell">' + esc(BR.title || hostOf(BR.url) || 'Загрузка…') + '</div><div class="u ell">' + (/^https:/i.test(BR.url) ? '🔒 ' : '') + esc(hostOf(BR.url)) + '</div></div>' +
+      '<button class="icon-btn" data-a="brExternal" title="Открыть в браузере или приложении">' + icon('open') + '</button>' +
+      '<button class="icon-btn" data-a="brClose" title="Закрыть">' + icon('close') + '</button>';
+    var pr = document.querySelector('#browser .br-prog i');
+    if (pr) { pr.style.width = (BR.loading ? Math.max(8, Math.round(BR.progress * 100)) : 0) + '%'; pr.parentNode.style.opacity = BR.loading ? 1 : 0; }
+  }
+  function brSync() { if (BR.open && NB.hasBrowser()) setTimeout(function () { NB.browserBounds(brRect()); }, 30); }
+  function openBrowser(url) {
+    if (!url) return;
+    closeSheet();
+    BR.open = true; BR.url = url; BR.title = ''; BR.loading = true; BR.progress = 0; BR.canBack = false; BR.canFwd = false;
+    document.body.classList.add('browsing');
+    $('browser').className = '';
+    brBar();
+    if (NB.hasBrowser()) {
+      setTimeout(function () { NB.browserOpen(url, brRect()); }, 30);
+    } else {
+      // проверочный режим в браузере: обычная рамка
+      $('bview').innerHTML = '<iframe src="' + esc(url) + '" referrerpolicy="no-referrer"></iframe>';
+      BR.loading = false; brBar();
+    }
+  }
+  function closeBrowser() {
+    if (!BR.open) return;
+    BR.open = false;
+    if (NB.hasBrowser()) NB.browserClose(); else $('bview').innerHTML = '';
+    document.body.classList.remove('browsing');
+    $('browser').className = 'off';
+    renderMini();
+  }
+  NB.on('browser', function (e) {
+    if (!e) return;
+    if (e.closed) { if (BR.open) closeBrowser(); return; }
+    ['url', 'title', 'canBack', 'canFwd', 'loading', 'progress'].forEach(function (k) { if (e[k] != null) BR[k] = e[k]; });
+    if (BR.open) brBar();
+  });
+  window.addEventListener('resize', function () { brSync(); });
 
   // ---------- действия ----------
   var A = {
@@ -601,9 +718,23 @@
     removeItem: function (x) { var a = x.split('|'), p = playlist(a[0]); p.items.splice(+a[1], 1); Store.saveLibrary(); closeSheet(); render(); },
     renamePl: function (id) { var p = playlist(id); var n = prompt('Название плейлиста', p.name); if (n && n.trim()) { p.name = n.trim(); Store.saveLibrary(); render(); } },
     deletePl: function (id) { var p = playlist(id); if (confirm('Удалить плейлист «' + p.name + '»? Сами треки не удалятся.')) { Store.playlists = Store.playlists.filter(function (q) { return q.id !== id; }); S.playlist = null; Store.saveLibrary(); render(); } },
-    openLink: function (url) { closeSheet(); NB.openLink(url); },
-    openApp: function (pkg) { closeSheet(); if (NB.launchApp(pkg)) return; var pl = PKG[pkg]; if (pl) NB.openLink(PLATFORMS[pl].home); },
-    openPlatform: function (id) { if (NB.kind === 'android' && NB.launchApp(PLATFORMS[id].pkg)) return; NB.openLink(PLATFORMS[id].home); },
+    openLink: function (url) { closeSheet(); openBrowser(url); },
+    openApp: function (pkg) { closeSheet(); if (NB.launchApp(pkg)) return; var pl = PKG[pkg]; if (pl) openBrowser(PLATFORMS[pl].home); },
+    openPlatform: function (id) { openBrowser(PLATFORMS[id].home); },
+    brBack: function () { if (BR.canBack) NB.browserNav('back'); else closeBrowser(); },
+    brFwd: function () { NB.browserNav('forward'); },
+    brReload: function () { NB.browserNav(BR.loading ? 'stop' : 'reload'); },
+    brExternal: function () { var u = BR.url; closeBrowser(); NB.openLink(u); },
+    brClose: function () { closeBrowser(); },
+    updCheck: function () {
+      Updates.check(true).then(function (st) {
+        if (st === 'latest') toast('У тебя последняя версия ' + Updates.current());
+        else if (st === 'available') toast('Доступна версия ' + Updates.latest.version);
+        else if (st === 'error') toast(Updates.error);
+      });
+    },
+    updInstall: function () { Updates.install(); if (!S.updSheet) render(); },
+    updLater: function () { if (Updates.latest) { Store.settings.skipVersion = Updates.latest.version; Store.saveSettings(); } closeSheet(); toast('Напомню о следующей версии. Обновиться можно в Настройках'); },
     appSettings: function () { NB.openAppSettings(); },
     notifAccess: function () { NB.openNotifAccess(); },
     useSession: function (pkg) { Player.lastLocal = 0; if (Player.ext && Player.ext.pkg !== pkg) Player.ext = null; go('np'); },
@@ -667,7 +798,7 @@
     var el = ev.target.closest ? ev.target.closest('[data-a]') : null;
     if (!el) return;
     var a = el.getAttribute('data-a'), x = el.getAttribute('data-x');
-    if (el.classList.contains('more') || a === 'sessToggle') ev.stopPropagation();
+    if (el.classList.contains('more') || a === 'sessToggle' || a === 'openApp') ev.stopPropagation();
     if (A[a]) { A[a](x); }
   }, true);
   document.addEventListener('input', function (ev) {
@@ -724,7 +855,7 @@
     var t = p.items[start];
     if (t && t.source && t.source.web && !shuffle) {
       var link = t.source.web.link || searchURL(t);
-      if (link) { NB.openLink(link); toast('Открываю в ' + ((PLATFORMS[t.source.web.platform] || {}).name || 'приложении')); }
+      if (link) openBrowser(link);
       return;
     }
     var local = [];
@@ -837,6 +968,7 @@
   // Кнопка «назад» на Android
   window.__back = function () {
     if ($('modal').classList.contains('on')) { closeSheet(); return true; }
+    if (BR.open) { A.brBack(); return true; }
     if (S.playlist) { S.playlist = null; render(); return true; }
     if (S.focus) { A.focus(); return true; }
     if (S.tab !== 'np') { go('np'); return true; }
@@ -888,9 +1020,15 @@
       Player.setMode();
       restoreLast();
       render();
+      Updates.auto();
+      setInterval(function () {
+        renderTabs();
+        document.querySelectorAll('.new-badge').forEach(function (b) { if (!isNew(b.getAttribute('data-f'))) b.remove(); });
+      }, 60 * 1000);
       NB.ready();
     });
   }
+  window.__brState = function () { return { open: BR.open, url: BR.url, title: BR.title, canBack: BR.canBack }; };
   window.UI = { render: render, S: S, A: A };
   start();
 })();

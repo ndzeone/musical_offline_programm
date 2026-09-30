@@ -12,6 +12,7 @@ enum Modal: Equatable {
     case addAccount
     case pasteLyrics
     case newPlaylist(addCurrent: Bool)
+    case update
 }
 
 struct Track: Identifiable {
@@ -150,6 +151,12 @@ final class PlayerModel: ObservableObject {
     @Published var autoLyrics: Bool { didSet { Self.d.set(autoLyrics, forKey: "autoLyrics") } }
     @Published var coverSize: CoverSize { didSet { Self.d.set(coverSize.rawValue, forKey: "coverSize") } }
     @Published var karaokeMode: KaraokeMode { didSet { Self.d.set(karaokeMode.rawValue, forKey: "karaokeMode") } }
+    // 2.4: закруглённое меню, жидкое стекло, обновления с GitHub
+    @Published var sidebarRounded: Bool { didSet { Self.d.set(sidebarRounded, forKey: "sidebarRounded") } }
+    @Published var liquidGlass: Bool { didSet { Self.d.set(liquidGlass, forKey: "liquidGlass") } }
+    @Published var autoUpdates: Bool { didSet { Self.d.set(autoUpdates, forKey: "autoUpdates") } }
+    @Published var updateState: UpdateState = .idle
+    var updateTimer: Timer?
     var lastWebAccount: UUID? {
         get { Self.d.string(forKey: "lastWebAccount").flatMap(UUID.init(uuidString:)) }
         set { Self.d.set(newValue?.uuidString, forKey: "lastWebAccount") }
@@ -187,6 +194,9 @@ final class PlayerModel: ObservableObject {
         autoLyrics = d.object(forKey: "autoLyrics") as? Bool ?? true
         coverSize = CoverSize(rawValue: d.string(forKey: "coverSize") ?? "") ?? .medium
         karaokeMode = KaraokeMode(rawValue: d.string(forKey: "karaokeMode") ?? "") ?? .letters
+        sidebarRounded = d.bool(forKey: "sidebarRounded")
+        liquidGlass = d.bool(forKey: "liquidGlass")
+        autoUpdates = d.object(forKey: "autoUpdates") as? Bool ?? true
         if let data = d.data(forKey: "accounts"), let list = try? JSONDecoder().decode([Account].self, from: data) {
             accounts = list
         }
@@ -216,6 +226,7 @@ final class PlayerModel: ObservableObject {
         housekeeping = t
         restoreSession()
         verifyArtOnce()
+        startUpdateChecks()
         let st = Timer(timeInterval: 10, repeats: true) { _ in
             MainActor.assumeIsolated { let m = PlayerModel.shared; if m.isPlaying { m.saveSession() } }
         }

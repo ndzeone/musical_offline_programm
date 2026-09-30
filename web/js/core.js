@@ -108,7 +108,11 @@
     download: ['s', 'M12 4v11M7.5 10.5L12 15l4.5-4.5M4 15v5h16v-5'],
     image: ['s', 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9.5a1 1 0 1 0 0-.01'],
     focus: ['s', 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5'],
-    clip: ['s', 'M8 4h8v3H8zM6 5.5H4V21h16V5.5h-2']
+    clip: ['s', 'M8 4h8v3H8zM6 5.5H4V21h16V5.5h-2'],
+    refresh: ['s', 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7'],
+    globe: ['s', 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18'],
+    fwd: ['s', 'M9 5l7 7-7 7'],
+    sparkle: ['f', 'M12 2l2.2 6.3L20.5 10l-6.3 2.2L12 18.5l-2.2-6.3L3.5 10l6.3-1.7z']
   };
   function icon(name, cls) {
     var p = P[name] || P.music;
@@ -147,8 +151,30 @@
   var DEFAULTS = {
     theme: 'minecraft', background: 'minecraft', perf: 'balanced', textScale: 1, karaoke: 'letters',
     autoLyrics: true, trackToasts: true, keepScreenOn: false, bass: 0, treble: 0, shuffle: false, repeat: 'all',
-    volume: 0.8, particles: true, lastTab: 'np'
+    volume: 0.8, particles: true, lastTab: 'np',
+    // 2.4: закруглённая панель (на телефоне сразу), жидкое стекло, автопроверка обновлений
+    roundPanel: mobile, glass: false, autoUpdates: true, seen: {}, skipVersion: ''
   };
+
+  // ---------- новые функции: плашка «Новое» 240 минут после первого запуска версии ----------
+  var NEW_MINUTES = 240;
+  var FEATURES = { updates: '2.4.0', roundPanel: '2.4.0', glass: '2.4.0', browser: '2.4.0' };
+  function isNew(id) {
+    var v = FEATURES[id], t = v && Store.settings.seen && Store.settings.seen[v];
+    return !!t && Date.now() - t < NEW_MINUTES * 60000;
+  }
+  function anyNew() { return Object.keys(FEATURES).some(isNew); }
+  function newBadge(id) { return isNew(id) ? '<span class="new-badge" data-f="' + id + '">Новое</span>' : ''; }
+
+  // Сравнение версий «2.4.0» / «v2.10.1»
+  function cmpVersion(a, b) {
+    var x = String(a || '0').replace(/^v/i, '').split(/[.-]/), y = String(b || '0').replace(/^v/i, '').split(/[.-]/);
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var p = parseInt(x[i] || '0', 10) || 0, q = parseInt(y[i] || '0', 10) || 0;
+      if (p !== q) return p > q ? 1 : -1;
+    }
+    return 0;
+  }
   var PERF = {
     eco: { name: 'Экономия', fps: 20, particles: false, blur: false, dpr: 1, tag: 'Дольше работает от батареи' },
     balanced: { name: 'Баланс', fps: mobile ? 30 : 60, particles: true, blur: false, dpr: 1.5, tag: 'Плавно и не греет телефон' },
@@ -162,9 +188,13 @@
     load: function () {
       return Promise.all([NB.readFile('settings.json'), NB.readFile('library.json')]).then(function (r) {
         try { Object.assign(Store.settings, JSON.parse(r[0] || '{}')); } catch (e) {}
+        if (Store.settings.roundPanel == null) Store.settings.roundPanel = mobile;
         Store.playlists = Store.parseLibrary(r[1]) || [];
         Store.ensureFavorites();
         Store.loaded = true;
+        var ver = String(NB.version()).replace(/^v/i, '');
+        if (!Store.settings.seen || typeof Store.settings.seen !== 'object') Store.settings.seen = {};
+        if (!Store.settings.seen[ver]) { Store.settings.seen[ver] = Date.now(); Store.saveSettings(); }
       });
     },
     // Понимает и формат версии для Mac, и простой список плейлистов
@@ -218,6 +248,11 @@
     toastTimer = setTimeout(function () { el.classList.remove('on'); }, 3200);
   }
 
+  window.isNew = isNew;
+  window.anyNew = anyNew;
+  window.newBadge = newBadge;
+  window.cmpVersion = cmpVersion;
+  window.FEATURES = FEATURES;
   window.U = U;
   window.icon = icon;
   window.THEMES = THEMES;

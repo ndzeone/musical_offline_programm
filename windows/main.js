@@ -1,6 +1,7 @@
 // «Музыка в офлайн» для Windows: окно с общим интерфейсом (папка web) и доступ к файлам компьютера.
 'use strict';
-const { app, BrowserWindow, protocol, ipcMain, dialog, shell, net, nativeImage, Menu } = require('electron');
+const { app, BrowserWindow, WebContentsView, protocol, ipcMain, dialog, shell, net, nativeImage, Menu } = require('electron');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
@@ -209,6 +210,94 @@ ipcMain.handle('embeddedArt', async (e, file) => {
 ipcMain.handle('openLink', (e, url) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return true; });
 ipcMain.on('ready', () => {});
 
+function sendEvent(name, payload) {
+  if (win && !win.isDestroyed()) win.webContents.send('nb-event', name, payload);
+}
+
+// ---------- браузер внутри программы: сайт площадки в прямоугольнике страницы ----------
+let site = null, siteStart = '';
+function siteState(extra) {
+  const wc = site.webContents, h = wc.navigationHistory;
+  return Object.assign({ url: wc.getURL(), title: wc.getTitle(), canBack: h.canGoBack(), canFwd: h.canGoForward(), loading: wc.isLoading() }, extra || {});
+}
+function siteBounds(r) {
+  if (!site || !r) return;
+  site.setBounds({ x: Math.round(r.x || 0), y: Math.round(r.y || 0), width: Math.max(1, Math.round(r.w || 1)), height: Math.max(1, Math.round(r.h || 1)) });
+}
+function createSite() {
+  site = new WebContentsView({ webPreferences: { partition: 'persist:sites', contextIsolation: true, sandbox: true } });
+  const wc = site.webContents;
+  // сайты видят обычный Chrome
+  wc.setUserAgent(wc.getUserAgent().replace(/\s(Electron|muzyka-offline|MuzykaOffline|Музыка в офлайн)\/\S+/gi, ''));
+  wc.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) wc.loadURL(url); else shell.openExternal(url); return { action: 'deny' }; });
+  wc.on('will-navigate', (e, url) => { if (!/^https?:/.test(url)) { e.preventDefault(); shell.openExternal(url); } });
+  const upd = (extra) => sendEvent('browser', siteState(extra));
+  wc.on('did-start-loading', () => upd({ loading: true, progress: 0.1 }));
+  wc.on('did-stop-loading', () => upd({ loading: false, progress: 1 }));
+  wc.on('page-title-updated', () => upd());
+  wc.on('did-navigate', () => upd());
+  wc.on('did-navigate-in-page', () => upd());
+  wc.on('render-process-gone', () => { try { win.contentView.removeChildView(site); } catch (e) {} site = null; sendEvent('browser', { closed: true }); });
+}
+ipcMain.on('browserOpen', (e, url, rect) => {
+  if (!win) return;
+  if (!site) createSite();
+  win.contentView.addChildView(site);
+  siteBounds(rect);
+  // тот же сайт уже открыт — показываем как есть (вход и музыка сохраняются)
+  if (!(site.webContents.getURL() && url === siteStart)) site.webContents.loadURL(url).catch(() => {});
+  siteStart = url;
+  sendEvent('browser', siteState());
+});
+ipcMain.on('browserBounds', (e, rect) => siteBounds(rect));
+ipcMain.on('browserNav', (e, action) => {
+  if (!site) return;
+  const wc = site.webContents, h = wc.navigationHistory;
+  if (action === 'back' && h.canGoBack()) h.goBack();
+  else if (action === 'forward' && h.canGoForward()) h.goForward();
+  else if (action === 'reload') wc.reload();
+  else if (action === 'stop') wc.stop();
+});
+// закрыть = спрятать: страница живёт дальше (если на сайте играет музыка, она не прервётся)
+ipcMain.on('browserClose', () => { if (site && win) { try { win.contentView.removeChildView(site); } catch (e) {} } });
+
+// ---------- обновление: скачать установщик и запустить его ----------
+async function downloadTo(url, file, onProgress) {
+  const r = await net.fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const total = +r.headers.get('content-length') || 0;
+  const out = fs.createWriteStream(file);
+  const reader = r.body.getReader();
+  let done = 0, last = -1;
+  for (;;) {
+    const { value, done: end } = await reader.read();
+    if (end) break;
+    if (!out.write(Buffer.from(value))) await new Promise((res) => out.once('drain', res));
+    done += value.length;
+    const pct = total ? Math.floor(done * 100 / total) : 0;
+    if (pct !== last) { last = pct; onProgress(pct / 100); }
+  }
+  await new Promise((res, rej) => out.end((err) => (err ? rej(err) : res())));
+  return done;
+}
+ipcMain.on('installUpdate', async (e, url, name) => {
+  try {
+    const dir = path.join(app.getPath('temp'), 'MuzykaOffline-update');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, String(name || 'setup.exe').replace(/[^A-Za-z0-9._-]/g, '_'));
+    const size = await downloadTo(url, file, (p) => sendEvent('update', { phase: 'progress', progress: p }));
+    if (size < 1000000) throw new Error('файл слишком маленький');
+    sendEvent('update', { phase: 'installing' });
+    if (SNAPSHOT) { lastUpdateFile = { file, size }; return; }   // проверка на сервере: не запускаем
+    // тихая установка поверх и запуск новой версии; сами закрываемся, сохранив всё
+    spawn(file, ['/S', '/currentuser', '--updated', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
+    setTimeout(() => app.quit(), 800);
+  } catch (err) {
+    sendEvent('update', { phase: 'error', message: 'Не получилось скачать обновление. Проверь интернет' });
+  }
+});
+let lastUpdateFile = null;
+
 // ---------- проверка на сборочном сервере: снимки экранов и работа плеера ----------
 function wavSilence(file, seconds) {
   const rate = 22050, n = rate * seconds, buf = Buffer.alloc(44 + n * 2);
@@ -256,6 +345,21 @@ function runSnapshots() {
       const set = JSON.parse(Files.read(DATA, 'settings.json') || '{}');
       report.push('last saved: ' + JSON.stringify(set.last && { title: set.last.queue[set.last.index].title, pos: set.last.pos }));
       await js(`UI.A.tab('set'); true`); await wait(1200); await shot('win_settings');
+      // 2.4: браузер внутри программы
+      await js(`UI.A.openLink('https://example.com/'); true`); await wait(6000);
+      const br = await js('JSON.stringify(UI.S && window.__brState ? window.__brState() : null)');
+      report.push('browser: ' + JSON.stringify(site ? siteState() : null) + ' page: ' + br);
+      await shot('win_browser');
+      if (site) fs.writeFileSync(path.join(out, 'win_browser_site.png'), (await site.webContents.capturePage()).toPNG());
+      await js(`UI.A.brClose(); true`); await wait(500);
+      report.push('browser closed: ' + !win.contentView.children.includes(site));
+      // 2.4: проверка обновлений (как будто стоит старая версия) и загрузка установщика
+      const st = await js(`Updates.check(true, { current: '2.0.0' }).then(function (s) { return JSON.stringify({ s: s, v: Updates.latest && Updates.latest.version, asset: Updates.latest && Updates.latest.asset && Updates.latest.asset.name }); })`);
+      report.push('update check: ' + st);
+      await js(`UI.A.tab('set'); true`); await wait(800); await shot('win_update_available');
+      await js(`UI.A.updInstall(); true`);
+      for (let i = 0; i < 120 && !lastUpdateFile; i++) await wait(1000);
+      report.push('update downloaded: ' + JSON.stringify(lastUpdateFile) + ' status: ' + await js('Updates.status'));
       await js(`UI.A.theme('kitty'); UI.A.tab('np'); true`); await wait(1500); await shot('win_kitty');
     } catch (err) {
       report.push('ERROR ' + (err && err.stack || err));
