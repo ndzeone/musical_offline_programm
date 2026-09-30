@@ -63,7 +63,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: bash ci/android_run.sh "$RUNNER_TEMP/music" out/app-debug.apk "out/Muzyka-v${{ env.VERSION_NAME }}-Android.apk" android-shots
       - uses: actions/upload-artifact@v4
         if: always()
@@ -92,10 +92,19 @@ jobs:
       - name: Проверка установщика (тихая установка)
         shell: pwsh
         run: |
-          $setup = Get-ChildItem windows/dist/*.exe | Select-Object -First 1
-          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
-          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter MuzykaOffline.exe | Select-Object -First 1
+          $setup = Get-ChildItem windows/dist/Muzyka-*-Setup.exe | Select-Object -First 1
+          "Установщик: $($setup.Name), $([math]::Round($setup.Length / 1MB)) МБ"
+          Get-ChildItem windows/dist | Format-Table Name, Length
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru
+          $p.WaitForExit()
+          $exe = $null
+          for ($i = 0; $i -lt 60 -and -not $exe; $i++) {
+            $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Recurse -Filter MuzykaOffline.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $exe) { Start-Sleep -Seconds 2 }
+          }
           if (-not $exe) { throw 'программа не установилась' }
+          $lnk = Get-ChildItem "$env:USERPROFILE\Desktop", "$env:PUBLIC\Desktop" -Filter *.lnk -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+          "Ярлыки на рабочем столе: $lnk" | Tee-Object -Append windows-shots/report.txt
           "Установлено: $($exe.FullName)" | Tee-Object -Append windows-shots/report.txt
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item $setup.FullName out/
