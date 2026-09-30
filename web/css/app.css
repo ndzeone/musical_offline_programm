@@ -721,3 +721,12 @@ body.glass.light #mini .a, body.glass.light #mini .icon-btn { color: var(--panel
 body.browsing #toast { top: calc(var(--st) + 64px); bottom: auto; }
 body[data-theme="minecraft"] .np-artist, body[data-theme="minecraft"] .bv-status, body[data-theme="minecraft"] .lyr-wait { color: #f0f0f0; text-shadow: 1px 1px 0 rgba(0,0,0,.8); }
 body.light { color-scheme: light; }
+/* страница площадки на телефоне: под плавающей панелью не просвечивает экран позади */
+#browser { bottom: 0; padding-bottom: calc(var(--tabs-h) + var(--sb) + var(--tabs-extra)); }
+body.round #browser { bottom: 0; padding-bottom: calc(var(--tabs-h) + var(--sb) + var(--tabs-extra) + 6px); }
+@media (min-width: 900px) and (min-height: 541px) {
+  #browser { padding-bottom: 0; bottom: 0; }
+  body.withmini #browser { bottom: calc(var(--mini-h) + 28px); }
+  body.round #browser { padding-bottom: 0; bottom: 12px; }
+  body.round.withmini #browser { bottom: calc(var(--mini-h) + 28px); }
+}

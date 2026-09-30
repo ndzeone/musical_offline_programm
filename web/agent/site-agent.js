@@ -186,6 +186,15 @@
     if (!title || !art || !dur || P === 'soundcloud') {
       var dn = mc.domNow();
       if (!title && dn.title) { title = dn.title; artist = artist || dn.artist; }
+      // Любой другой сайт (или браузер без Media Session, как встроенный в Android): название страницы
+      // Площадка без Media Session (встроенный браузер Android): «Название • Исполнитель» в заголовке вкладки
+      if (!title && P !== 'other' && m && !m.paused && document.title) {
+        var parts = document.title.split(/\s[•—–-]\s/);
+        if (parts.length >= 2 && !/spotify|soundcloud|яндекс|yandex|вконтакте|vk музыка|web player/i.test(parts[0] + ' ' + parts[1])) {
+          title = parts[0].trim(); artist = artist || parts[1].trim();
+        }
+      }
+      if (!title && P === 'other' && m && document.title) { title = document.title.trim(); artist = artist || location.hostname.replace(/^www\./, ''); }
       if (!art && dn.art) art = dn.art;
       // У SoundCloud длина из полоски плеера точнее, чем у потока
       if (dn.dur && (!dur || (P === 'soundcloud' && !mc.pos))) dur = dn.dur;

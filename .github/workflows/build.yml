@@ -118,7 +118,7 @@ jobs:
           $exe = $null
           for ($i = 0; $i -lt 90 -and -not ($exe -and $p.HasExited); $i++) {
             Start-Sleep -Seconds 2
-            if (-not $exe) { $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Recurse -Filter MuzykaOffline.exe -ErrorAction SilentlyContinue | Select-Object -First 1 }
+            if (-not $exe) { $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Depth 3 -Filter MuzykaOffline.exe -ErrorAction SilentlyContinue | Select-Object -First 1 }
           }
           "Установщик закончил работу: $($p.HasExited)" | Tee-Object -Append windows-shots/report.txt
           Get-Process | Where-Object { $_.ProcessName -like 'Muzyka*' } | Format-Table ProcessName, Id, Path -AutoSize | Out-String | Write-Host
@@ -183,8 +183,9 @@ jobs:
         run: python3 ci/server_test.py http://127.0.0.1:8088/api.php
       - name: Профиль в программе (регистрация, отметки, вход, удаление)
         run: |
-          google-chrome --headless=new --remote-debugging-port=9222 --no-first-run --user-data-dir="$RUNNER_TEMP/chrome" about:blank > chrome.log 2>&1 &
-          sleep 5
+          google-chrome --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --no-first-run --user-data-dir="$RUNNER_TEMP/chrome" about:blank > chrome.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:9222/json > /dev/null && break; sleep 1; done
+          curl -s http://127.0.0.1:9222/json/version || { cat chrome.log; exit 1; }
           node ci/web_profile.mjs http://127.0.0.1:8090/index.html http://127.0.0.1:8088/api.php server-shots
       - uses: actions/upload-artifact@v4
         if: always()

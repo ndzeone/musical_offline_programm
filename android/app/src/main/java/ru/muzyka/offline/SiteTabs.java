@@ -61,7 +61,8 @@ final class SiteTabs {
         return "";
     }
 
-    /** Spotify и SoundCloud играют музыку только в «компьютерной» версии сайта, Яндекс и VK — и в телефонной. */
+    /** Площадки открываем в «компьютерной» версии: Spotify и SoundCloud играют только в ней, а помощник
+     *  узнаёт трек по полоске плеера этой версии (во встроенном браузере Android нет Media Session). */
     private String uaFor(WebView w, String url) {
         if (mobileUA == null) {
             String def = w.getSettings().getUserAgentString();
@@ -70,8 +71,7 @@ final class SiteTabs {
             String ver = m.find() ? m.group(1).replaceAll("^(\\d+).*", "$1") + ".0.0.0" : "130.0.0.0";
             desktopUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + ver + " Safari/537.36";
         }
-        String p = platformOf(url);
-        return "spotify".equals(p) || "soundcloud".equals(p) ? desktopUA : mobileUA;
+        return platformOf(url).isEmpty() ? mobileUA : desktopUA;
     }
 
     private String agentJs() {
