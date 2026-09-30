@@ -1,0 +1,69 @@
+{
+  "name": "muzyka-offline",
+  "productName": "Музыка в офлайн",
+  "version": "2.3.0",
+  "description": "Музыка в офлайн — плеер с текстами песен, темами и живыми фонами",
+  "author": "ndzeone",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never",
+    "predist": "node -e \"const fs=require('fs');fs.rmSync('web',{recursive:true,force:true});fs.cpSync('../web','web',{recursive:true})\""
+  },
+  "dependencies": {
+    "music-metadata": "7.14.0"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "ru.muzyka.offline",
+    "productName": "Музыка в офлайн",
+    "executableName": "MuzykaOffline",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "files.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "web",
+        "to": "web"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Музыка в офлайн",
+      "uninstallDisplayName": "Музыка в офлайн",
+      "artifactName": "Muzyka-v${version}-Windows-Setup.${ext}",
+      "installerLanguages": [
+        "ru_RU"
+      ],
+      "language": "1049",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

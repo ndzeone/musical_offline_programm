@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>Музыка в офлайн</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body data-theme="minecraft">
+  <canvas id="bg"></canvas>
+  <div id="shade"></div>
+  <div id="root">
+    <aside id="side"></aside>
+    <main id="main"><div id="screen"></div></main>
+  </div>
+  <div id="mini"></div>
+  <nav id="tabs"></nav>
+  <div id="modal"></div>
+  <div id="toast"></div>
+  <input id="filepick" type="file" accept="audio/*,.lrc,.txt" multiple hidden>
+  <script src="js/bridge.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/lyrics.js"></script>
+  <script src="js/art.js"></script>
+  <script src="js/bg.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>

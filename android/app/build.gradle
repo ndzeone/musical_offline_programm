@@ -1,0 +1,66 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Общий интерфейс (папка web в корне проекта) кладём в assets/www при каждой сборке
+def webOut = file("$buildDir/generated/webassets")
+tasks.register('copyWeb', Copy) {
+    from rootProject.file('../web')
+    into new File(webOut, 'www')
+}
+
+android {
+    namespace 'ru.muzyka.offline'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'ru.muzyka.offline'
+        minSdk 26
+        targetSdk 35
+        versionCode Integer.parseInt(System.getenv('VERSION_CODE') ?: '203')
+        versionName System.getenv('VERSION_NAME') ?: '2.3.0'
+    }
+
+    signingConfigs {
+        release {
+            def ks = System.getenv('ANDROID_KEYSTORE_FILE')
+            if (ks != null && new File(ks).exists()) {
+                storeFile file(ks)
+                storeType 'pkcs12'
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS') ?: 'muzyka'
+                keyPassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            def ks = System.getenv('ANDROID_KEYSTORE_FILE')
+            signingConfig (ks != null && new File(ks).exists()) ? signingConfigs.release : signingConfigs.debug
+        }
+        debug {
+            // проверочная сборка ставится рядом с обычной
+            applicationIdSuffix '.debug'
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs += webOut
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
+
+tasks.named('preBuild') { dependsOn 'copyWeb' }

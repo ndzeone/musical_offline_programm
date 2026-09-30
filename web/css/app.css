@@ -1,0 +1,364 @@
+/* Музыка в офлайн — общий интерфейс для Android и Windows */
+
+@font-face { font-family: "PressStart"; src: url("../fonts/PressStart2P-Regular.ttf"); font-display: swap; }
+@font-face { font-family: "Unbounded"; src: url("../fonts/Unbounded-ExtraBold.ttf"); font-display: swap; }
+@font-face { font-family: "Nunito"; src: url("../fonts/Nunito-ExtraBold.ttf"); font-display: swap; }
+@font-face { font-family: "Comfortaa"; src: url("../fonts/Comfortaa-Bold.ttf"); font-display: swap; }
+@font-face { font-family: "RussoOne"; src: url("../fonts/RussoOne-Regular.ttf"); font-display: swap; }
+
+/* ---------- Темы ---------- */
+:root {
+  --st: env(safe-area-inset-top, 0px);
+  --sb: env(safe-area-inset-bottom, 0px);
+  --tabs-h: 64px;
+  --mini-h: 64px;
+  --gap: 16px;
+  --scale: 1;
+}
+body[data-theme="minecraft"] {
+  --bg: #3c5a8c; --text: #ffffff; --dim: #b4b4b4; --sung: #ffff55; --glow: transparent;
+  --accent: #80ff20; --accent2: #ffff55; --on-accent: #ffffff;
+  --panel: #c6c6c6; --panel-text: #3f3f3f; --panel-dim: #5a5a5a; --border: #000000;
+  --radius: 0px; --font-title: "PressStart", monospace; --font-body: "PressStart", monospace;
+  --fs: 0.62; --lyric: 17px; --lyric-dim: 11px; --unsung: 1;
+}
+body[data-theme="dora"] {
+  --bg: #2a0b3d; --text: #ffffff; --dim: #e7ccff; --sung: #ff6bcb; --glow: rgba(255, 45, 170, .75);
+  --accent: #ff4fb8; --accent2: #b36bff; --on-accent: #ffffff;
+  --panel: rgba(27, 10, 42, .86); --panel-text: #ffffff; --panel-dim: #d9b8f2; --border: rgba(255, 123, 203, .45);
+  --radius: 22px; --font-title: "Unbounded", system-ui, sans-serif; --font-body: "Nunito", system-ui, sans-serif;
+  --fs: 1; --lyric: 27px; --lyric-dim: 17px; --unsung: 1;
+}
+body[data-theme="kitty"] {
+  --bg: #ffe3ee; --text: #6b2440; --dim: #a8627f; --sung: #e8174f; --glow: rgba(255, 255, 255, .9);
+  --accent: #ff5c93; --accent2: #e8374f; --on-accent: #ffffff;
+  --panel: rgba(255, 255, 255, .9); --panel-text: #6b2440; --panel-dim: #a8627f; --border: rgba(255, 179, 207, .9);
+  --radius: 26px; --font-title: "Comfortaa", system-ui, sans-serif; --font-body: "Comfortaa", system-ui, sans-serif;
+  --fs: 1; --lyric: 27px; --lyric-dim: 17px; --unsung: 1;
+}
+body[data-theme="neon"] {
+  --bg: #0b0322; --text: #ffffff; --dim: #a9b8ff; --sung: #00f0ff; --glow: rgba(0, 213, 255, .75);
+  --accent: #ff2bd6; --accent2: #00c8ff; --on-accent: #ffffff;
+  --panel: rgba(11, 6, 32, .84); --panel-text: #ffffff; --panel-dim: #a9b8ff; --border: rgba(0, 229, 255, .45);
+  --radius: 14px; --font-title: "RussoOne", system-ui, sans-serif; --font-body: "RussoOne", system-ui, sans-serif;
+  --fs: 1; --lyric: 28px; --lyric-dim: 17px; --unsung: 1;
+}
+body[data-theme="minimal"] {
+  --bg: #121218; --text: #ffffff; --dim: rgba(255, 255, 255, .7); --sung: #ffffff; --glow: transparent;
+  --accent: #ffffff; --accent2: #d9d9e3; --on-accent: #111118;
+  --panel: rgba(18, 18, 24, .74); --panel-text: #ffffff; --panel-dim: #a0a0ae; --border: rgba(255, 255, 255, .22);
+  --radius: 18px; --font-title: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-body: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  --fs: 1; --lyric: 28px; --lyric-dim: 17px; --unsung: .42;
+}
+
+/* ---------- Основа ---------- */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+  background: var(--bg); color: var(--text); font-family: var(--font-body);
+  font-size: calc(14px * var(--fs)); -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none;
+  overscroll-behavior: none; touch-action: manipulation;
+}
+input, textarea { user-select: text; -webkit-user-select: text; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+svg { display: block; }
+#bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; }
+#shade { position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(0,0,0,.35) 0%, rgba(0,0,0,0) 22%, rgba(0,0,0,0) 62%, rgba(0,0,0,.45) 100%); }
+body[data-theme="kitty"] #shade { background: linear-gradient(180deg, rgba(255,255,255,.25), rgba(255,255,255,0) 30%); }
+#root { position: fixed; inset: 0; z-index: 2; display: flex; }
+#side { display: none; }
+#main { position: relative; flex: 1; min-width: 0; height: 100%; }
+#screen { position: absolute; inset: 0; overflow: hidden; }
+.scroll { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: calc(var(--st) + 14px) var(--gap) calc(var(--tabs-h) + var(--mini-h) + var(--sb) + 20px); }
+.scroll::-webkit-scrollbar { width: 0; }
+.hide { display: none !important; }
+
+/* ---------- Текст и заголовки ---------- */
+.h1 { font-family: var(--font-title); font-size: calc(28px * var(--fs)); line-height: 1.15; margin: 4px 0 6px; }
+.h2 { font-family: var(--font-title); font-size: calc(18px * var(--fs)); margin: 0; }
+.sub { color: var(--dim); font-size: calc(13px * var(--fs)); }
+.label { text-transform: uppercase; letter-spacing: .12em; font-size: calc(11px * var(--fs)); color: var(--dim); margin: 22px 4px 10px; }
+body[data-theme="minecraft"] .label { color: #ffff55; letter-spacing: 0; text-shadow: 1px 1px 0 #3f3f15; }
+.panel .label { color: var(--panel-dim); }
+.ell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body[data-theme="minecraft"] .mc-shadow, body[data-theme="minecraft"] .h1 { text-shadow: 2px 2px 0 rgba(0,0,0,.55); }
+body[data-theme="minecraft"] .sub { color: #e8e8e8; text-shadow: 1px 1px 0 rgba(0,0,0,.75); }
+body[data-theme="minecraft"] .mosaic { border-radius: 0; box-shadow: 0 0 0 3px #000; }
+
+/* ---------- Панели и кнопки ---------- */
+.panel {
+  background: var(--panel); color: var(--panel-text); border-radius: var(--radius);
+  border: 1px solid var(--border); padding: 14px;
+}
+body[data-theme="minecraft"] .panel {
+  border: 0; box-shadow: inset 3px 3px 0 #ffffff, inset -3px -3px 0 #555555, 0 0 0 2px #000;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 18px;
+  border-radius: calc(var(--radius) * .75 + 6px); background: var(--panel); border: 1px solid var(--border); color: var(--panel-text);
+  font-family: var(--font-body); font-size: calc(14px * var(--fs)); white-space: nowrap; transition: transform .12s, filter .12s;
+}
+.btn:active { transform: scale(.97); }
+.btn svg { width: 18px; height: 18px; }
+.btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: var(--on-accent); border-color: transparent; }
+.btn.block { width: 100%; }
+.btn.small { height: 36px; padding: 0 12px; font-size: calc(12px * var(--fs)); }
+body[data-theme="minecraft"] .btn {
+  border-radius: 0; background: #6f6f6f; color: #e0e0e0; text-shadow: 1px 1px 0 #383838;
+  box-shadow: inset 2px 2px 0 #a8a8a8, inset -2px -2px 0 #4a4a4a, 0 0 0 2px #000; font-size: 10px; height: 40px;
+}
+body[data-theme="minecraft"] .btn.primary { background: #4f8a28; box-shadow: inset 2px 2px 0 #8fd35a, inset -2px -2px 0 #2e5616, 0 0 0 2px #000; color: #fff; }
+.icon-btn {
+  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--text);
+  transition: transform .12s, background .15s;
+}
+.icon-btn:active { transform: scale(.9); }
+.icon-btn svg { width: 24px; height: 24px; }
+.icon-btn.on { color: var(--accent); }
+.icon-btn.round { background: rgba(127,127,127,.2); }
+body[data-theme="minecraft"] .icon-btn.round { border-radius: 0; background: #6f6f6f; box-shadow: inset 2px 2px 0 #a8a8a8, inset -2px -2px 0 #4a4a4a, 0 0 0 2px #000; }
+.play-btn {
+  width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent2)); color: var(--on-accent);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+.play-btn svg { width: 34px; height: 34px; }
+body[data-theme="minecraft"] .play-btn { border-radius: 0; background: #4f8a28; box-shadow: inset 3px 3px 0 #8fd35a, inset -3px -3px 0 #2e5616, 0 0 0 3px #000; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px;
+  background: rgba(0,0,0,.35); color: #fff; font-size: calc(12px * var(--fs)); max-width: 100%;
+}
+body[data-theme="kitty"] .chip { background: rgba(255,255,255,.75); color: var(--text); }
+body[data-theme="minecraft"] .chip { border-radius: 0; background: rgba(0,0,0,.5); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.badge { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; flex: none;
+  font: 900 10px/1 system-ui, sans-serif; color: #fff; overflow: hidden; }
+.badge img { width: 100%; height: 100%; object-fit: cover; }
+body[data-theme="minecraft"] .badge { border-radius: 0; }
+
+/* ---------- Нижние вкладки ---------- */
+#tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; height: calc(var(--tabs-h) + var(--sb));
+  padding-bottom: var(--sb); display: flex; justify-content: space-around; align-items: center;
+  background: var(--panel); border-top: 1px solid var(--border); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+.tab {
+  flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  color: var(--panel-dim); font-size: calc(11px * var(--fs));
+}
+.tab svg { width: 24px; height: 24px; }
+.tab.on { color: var(--accent); }
+body[data-theme="kitty"] .tab.on, body[data-theme="minimal"] .tab.on { color: var(--panel-text); }
+body[data-theme="minecraft"] #tabs { background: rgba(0,0,0,.6); border-top: 2px solid #2a2a2a; justify-content: center; gap: 0; }
+body[data-theme="minecraft"] .tab {
+  flex: 0 0 64px; height: 56px; margin-top: 2px; color: #fff; font-size: 7px;
+  box-shadow: inset 0 0 0 2px rgba(139,139,139,.55);
+}
+body[data-theme="minecraft"] .tab.on { color: #fff; background: rgba(128,255,32,.18); box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px #8b8b8b; }
+
+/* ---------- Мини-плеер ---------- */
+#mini {
+  position: fixed; left: 10px; right: 10px; bottom: calc(var(--tabs-h) + var(--sb) + 8px); z-index: 5; height: var(--mini-h);
+  display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: calc(var(--radius) * .6 + 8px);
+  background: var(--panel); color: var(--panel-text); border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  transition: transform .25s, opacity .25s;
+}
+#mini.off { transform: translateY(20px); opacity: 0; pointer-events: none; }
+body[data-theme="minecraft"] #mini { border-radius: 0; border: 0; box-shadow: inset 2px 2px 0 #fff, inset -2px -2px 0 #555, 0 0 0 2px #000; }
+#mini .art { width: 46px; height: 46px; border-radius: 10px; flex: none; overflow: hidden; }
+#mini .meta { flex: 1; min-width: 0; }
+#mini .t { font-size: calc(14px * var(--fs)); }
+#mini .a { font-size: calc(12px * var(--fs)); color: var(--panel-dim); margin-top: 3px; }
+#mini .bar { position: absolute; left: 14px; right: 14px; bottom: 4px; height: 3px; border-radius: 2px; background: rgba(127,127,127,.25); overflow: hidden; }
+#mini .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+#mini .icon-btn { color: var(--panel-text); }
+
+/* ---------- Обложки ---------- */
+.art { background: linear-gradient(135deg, rgba(127,127,127,.35), rgba(127,127,127,.1)); position: relative; }
+.art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art .ph { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255,255,255,.5); }
+.art .ph svg { width: 42%; height: 42%; }
+body[data-theme="minecraft"] .art { border-radius: 0 !important; }
+
+/* ---------- Сейчас играет ---------- */
+.np { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  padding: calc(var(--st) + 10px) 20px calc(var(--tabs-h) + var(--sb) + 14px); }
+.np-top { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; }
+.np-top .chip { min-width: 0; }
+.np-side { display: flex; flex-direction: column; align-items: center; max-width: 100%; }
+.np-cover-wrap { position: relative; margin-top: 8px; flex: none; }
+.np-cover { width: var(--cov); height: var(--cov); border-radius: calc(var(--radius) + 2px); overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0,0,0,.45); transition: transform .3s; }
+.np-vinyl { position: absolute; top: 4%; left: 30%; width: 92%; height: 92%; border-radius: 50%; z-index: -1;
+  background: repeating-radial-gradient(circle, #151518 0 2px, #1d1d22 2px 4px); box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  transition: left .6s cubic-bezier(.2,.8,.2,1); }
+.np-vinyl::after { content: ""; position: absolute; inset: 33%; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.np.playing .np-vinyl { left: 38%; animation: spin 7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+body.eco .np.playing .np-vinyl { animation: none; }
+body[data-theme="minecraft"] .np-cover { border-radius: 0; box-shadow: 6px 6px 0 rgba(0,0,0,.5); outline: 6px solid #7a5230; outline-offset: 0; border: 4px solid #b98a55; }
+body[data-theme="dora"] .np-cover { border: 3px solid #ff7bcb; box-shadow: 0 0 34px rgba(255,45,170,.6); }
+body[data-theme="kitty"] .np-cover { border: 8px solid #fff; box-shadow: 0 12px 30px rgba(255,126,179,.5); }
+body[data-theme="neon"] .np-cover { border: 2px solid #00f0ff; box-shadow: 0 0 20px rgba(0,213,255,.8), 0 0 50px rgba(255,43,214,.45); }
+.sticker { position: absolute; font-size: 30px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.4)); pointer-events: none; }
+.np-meta { width: 100%; text-align: center; margin-top: 16px; }
+.np-title { font-family: var(--font-title); font-size: calc(22px * var(--fs)); line-height: 1.2; }
+.np-artist { color: var(--dim); margin-top: 6px; font-size: calc(15px * var(--fs)); }
+.np-lyrics { position: relative; flex: 1; width: 100%; min-height: 90px; margin: 14px 0 8px; overflow: hidden;
+  mask-image: linear-gradient(180deg, transparent 0, #000 22%, #000 78%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 22%, #000 78%, transparent 100%); }
+.lyr { position: absolute; left: 0; right: 0; top: 50%; transition: transform .45s cubic-bezier(.2,.8,.2,1); text-align: center; }
+.lyr .l { padding: 5px 4px; color: var(--text); opacity: .42; font-size: calc(var(--lyric-dim) * var(--scale));
+  line-height: 1.3; transition: opacity .3s, font-size .3s, color .3s; font-family: var(--font-body); }
+.lyr .l.cur { opacity: 1; font-family: var(--font-title); font-size: calc(var(--lyric) * var(--scale)); text-shadow: 0 0 16px var(--glow); }
+.lyr .l.cur .s { color: var(--sung); }
+.lyr .l.cur .u { opacity: var(--unsung); }
+body.noblur .lyr .l { filter: none !important; }
+body[data-theme="minecraft"] .lyr .l { text-shadow: 2px 2px 0 rgba(0,0,0,.55); }
+body[data-theme="minecraft"] .lyr .l.cur .s { color: #ffff55; }
+.np-nolyr { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; color: var(--dim); }
+.np-prog { width: 100%; margin-top: 4px; }
+.seek { position: relative; height: 26px; display: flex; align-items: center; touch-action: none; }
+.seek .track { position: absolute; left: 0; right: 0; height: 5px; border-radius: 3px; background: rgba(127,127,127,.35); overflow: hidden; }
+.seek .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+.seek .knob { position: absolute; width: 15px; height: 15px; border-radius: 50%; background: #fff; margin-left: -7px; box-shadow: 0 2px 6px rgba(0,0,0,.35); left: 0; }
+body[data-theme="minecraft"] .seek .track { height: 10px; border-radius: 0; background: #1b1b1b; box-shadow: 0 0 0 2px #000; }
+body[data-theme="minecraft"] .seek .fill { background: linear-gradient(180deg, #c3ff78, #80ff20 50%, #3d9a0c); }
+body[data-theme="minecraft"] .seek .knob { display: none; }
+.times { display: flex; justify-content: space-between; font-size: calc(12px * var(--fs)); color: var(--dim); font-variant-numeric: tabular-nums; }
+.np-ctrl { width: 100%; display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+.np-ctrl .main { display: flex; align-items: center; gap: 18px; }
+.np-actions { width: 100%; display: flex; justify-content: space-around; margin-top: 8px; }
+
+/* Большой текст на весь экран */
+.np.focus .np-cover-wrap, .np.focus .np-meta { display: none; }
+.np.focus .np-lyrics { margin-top: 20px; }
+.np.focus .lyr .l.cur { font-size: calc(var(--lyric) * 1.25 * var(--scale)); }
+
+/* ---------- Пустой экран ---------- */
+.welcome { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: 30px 26px calc(var(--tabs-h) + var(--sb) + 30px); text-align: center; }
+.logo { width: 96px; height: 96px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,.4); }
+.welcome .h1 { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+body[data-theme="minecraft"] .welcome .h1 { color: #ededed; background: none; }
+
+/* ---------- Списки ---------- */
+.seg { display: flex; gap: 4px; padding: 4px; border-radius: calc(var(--radius) * .5 + 8px); background: rgba(127,127,127,.18); }
+.seg button { flex: 1; height: 36px; border-radius: calc(var(--radius) * .5 + 5px); font-size: calc(13px * var(--fs)); color: var(--text); }
+.seg button.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: var(--on-accent); }
+body[data-theme="minecraft"] .seg { border-radius: 0; background: rgba(0,0,0,.35); }
+body[data-theme="minecraft"] .seg button { border-radius: 0; font-size: 9px; }
+body[data-theme="minecraft"] .seg button.on { background: #4f8a28; }
+.search { width: 100%; height: 44px; border-radius: calc(var(--radius) * .6 + 6px); border: 1px solid var(--border);
+  background: var(--panel); color: var(--panel-text); padding: 0 14px; font: inherit; font-size: calc(14px * var(--fs)); outline: none; }
+body[data-theme="minecraft"] .search { border-radius: 0; background: #000; color: #e0e0e0; border: 2px solid #a0a0a0; font-size: 10px; }
+.list { display: flex; flex-direction: column; gap: 6px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: calc(var(--radius) * .5 + 8px);
+  background: var(--panel); color: var(--panel-text); border: 1px solid transparent; min-height: 60px; }
+.row:active { filter: brightness(1.1); }
+.row.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: var(--on-accent); }
+.row.off { opacity: .5; }
+.row .art { width: 46px; height: 46px; border-radius: 10px; flex: none; overflow: hidden; }
+.row .meta { flex: 1; min-width: 0; }
+.row .t { font-size: calc(15px * var(--fs)); }
+.row .a { font-size: calc(12px * var(--fs)); color: var(--panel-dim); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+.row.on .a { color: var(--on-accent); opacity: .85; }
+.row .dur { font-size: calc(12px * var(--fs)); color: var(--panel-dim); font-variant-numeric: tabular-nums; }
+.row .more { width: 36px; height: 36px; display: grid; place-items: center; color: inherit; opacity: .8; }
+.row .more svg { width: 20px; height: 20px; }
+body[data-theme="minecraft"] .row { border-radius: 0; background: #8b8b8b; color: #fff; box-shadow: inset 2px 2px 0 #373737, inset -2px -2px 0 #fff; }
+body[data-theme="minecraft"] .row .t { font-size: 10px; text-shadow: 1px 1px 0 #383838; }
+body[data-theme="minecraft"] .row .a { font-size: 8px; color: #e0e0e0; }
+body[data-theme="minecraft"] .row.on { background: #5b8c32; }
+.empty { text-align: center; padding: 40px 20px; color: var(--dim); line-height: 1.5; }
+.empty svg { width: 46px; height: 46px; margin: 0 auto 12px; opacity: .7; }
+
+/* Шапка плейлиста */
+.pl-head { display: flex; gap: 16px; align-items: center; margin: 6px 0 14px; }
+.mosaic { width: 112px; height: 112px; border-radius: 18px; overflow: hidden; flex: none; display: grid; grid-template-columns: 1fr 1fr; }
+.mosaic.one { grid-template-columns: 1fr; }
+.mosaic .art { width: 100%; height: 100%; border-radius: 0; }
+.pl-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.card { border-radius: calc(var(--radius) * .6 + 8px); overflow: hidden; background: var(--panel); color: var(--panel-text); border: 1px solid var(--border); }
+.card .art { width: 100%; aspect-ratio: 1; }
+.card .cap { padding: 10px 12px; }
+.card .cap .a { color: var(--panel-dim); font-size: calc(12px * var(--fs)); margin-top: 3px; }
+body[data-theme="minecraft"] .card { border-radius: 0; border: 0; box-shadow: 0 0 0 2px #000; }
+
+/* ---------- Настройки ---------- */
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 2px; border-top: 1px solid rgba(127,127,127,.18); }
+.set-row:first-child { border-top: 0; }
+.set-row .d { font-size: calc(12px * var(--fs)); color: var(--panel-dim); margin-top: 3px; }
+.switch { width: 50px; height: 30px; border-radius: 15px; background: rgba(127,127,127,.35); position: relative; flex: none; transition: background .2s; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: left .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.switch.on { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+.switch.on::after { left: 23px; }
+body[data-theme="minecraft"] .switch, body[data-theme="minecraft"] .switch::after { border-radius: 0; }
+.themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.theme-card { border-radius: 16px; overflow: hidden; border: 2px solid transparent; background: rgba(0,0,0,.25); text-align: left; color: #fff; }
+.theme-card.on { border-color: var(--accent); }
+.theme-card .pv { height: 64px; display: flex; align-items: flex-end; padding: 8px 10px; font-size: 24px; }
+.theme-card .nm { padding: 8px 10px 10px; font-size: 13px; }
+.bgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.bg-card { border-radius: 14px; overflow: hidden; border: 2px solid transparent; background: rgba(0,0,0,.25); color: #fff; }
+.bg-card.on { border-color: var(--accent); }
+.bg-card canvas { width: 100%; height: 70px; display: block; }
+.bg-card .nm { padding: 6px 8px 8px; font-size: 11px; text-align: center; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 30px; background: transparent; }
+input[type=range]::-webkit-slider-runnable-track { height: 5px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #fff; margin-top: -8px; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+
+/* ---------- Окна поверх ---------- */
+#modal { position: fixed; inset: 0; z-index: 20; display: none; }
+#modal.on { display: block; }
+#modal .dim { position: absolute; inset: 0; background: rgba(0,0,0,.5); animation: fade .2s; }
+#modal .sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: 86%; overflow-y: auto; padding: 18px 18px calc(var(--sb) + 18px);
+  background: var(--panel); color: var(--panel-text); border-radius: calc(var(--radius) + 6px) calc(var(--radius) + 6px) 0 0;
+  border-top: 1px solid var(--border); animation: up .25s cubic-bezier(.2,.8,.2,1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+body[data-theme="minecraft"] #modal .sheet { border-radius: 0; background: #c6c6c6; color: #3f3f3f; box-shadow: inset 3px 3px 0 #fff, inset -3px -3px 0 #555; }
+#modal .sheet .grip { width: 44px; height: 5px; border-radius: 3px; background: rgba(127,127,127,.5); margin: -6px auto 14px; }
+#modal .menu-item { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 6px; font-size: calc(15px * var(--fs)); text-align: left; border-top: 1px solid rgba(127,127,127,.15); }
+#modal .menu-item:first-of-type { border-top: 0; }
+#modal .menu-item svg { width: 22px; height: 22px; opacity: .85; }
+#modal textarea { width: 100%; min-height: 220px; border-radius: 12px; border: 1px solid var(--border); background: rgba(127,127,127,.12); color: inherit; padding: 12px; font: 14px/1.4 system-ui, sans-serif; }
+@keyframes up { from { transform: translateY(40px); opacity: 0; } }
+@keyframes fade { from { opacity: 0; } }
+
+#toast { position: fixed; left: 50%; bottom: calc(var(--tabs-h) + var(--mini-h) + var(--sb) + 26px); transform: translate(-50%, 16px);
+  z-index: 30; padding: 10px 18px; border-radius: 999px; background: var(--panel); color: var(--panel-text); border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); opacity: 0; transition: opacity .3s, transform .3s; pointer-events: none; max-width: 88%; text-align: center; font-size: calc(13px * var(--fs)); }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
+body[data-theme="minecraft"] #toast { border-radius: 0; background: rgba(0,0,0,.75); color: #ffff55; border: 0; }
+
+/* ---------- Компьютер: меню слева, как на Mac ---------- */
+@media (min-width: 900px) {
+  :root { --tabs-h: 0px; --mini-h: 88px; --gap: 22px; }
+  #tabs { display: none; }
+  #side { display: flex; flex-direction: column; width: 240px; flex: none; padding: 28px 10px 16px; gap: 3px;
+    background: var(--panel); border-right: 1px solid var(--border); color: var(--panel-text); }
+  body[data-theme="minecraft"] #side { background: rgba(20,20,20,.72); color: #fff; border-right: 2px solid #5a5a5a; }
+  .side-logo { display: flex; align-items: center; gap: 10px; padding: 0 10px 16px; font-family: var(--font-title); font-size: calc(14px * var(--fs)); }
+  .side-logo img { width: 32px; height: 32px; border-radius: 8px; }
+  .side-item { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px; border-radius: 10px; width: 100%; text-align: left; color: inherit; font-size: calc(14px * var(--fs)); }
+  .side-item svg { width: 18px; height: 18px; }
+  .side-item.on { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: var(--on-accent); }
+  body[data-theme="minecraft"] .side-item { border-radius: 0; font-size: 9px; }
+  body[data-theme="minecraft"] .side-item.on { background: #4f8a28; box-shadow: inset 2px 2px 0 #8fd35a, inset -2px -2px 0 #2e5616; }
+  #mini { left: 256px; right: 16px; bottom: 14px; height: var(--mini-h); padding: 12px 18px; }
+  #mini .art { width: 58px; height: 58px; }
+  .scroll { padding: 34px 28px calc(var(--mini-h) + 40px); }
+  .np { flex-direction: row; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 56px; padding: 70px 40px calc(var(--mini-h) + 40px); }
+  .np-top { position: absolute; top: 20px; left: 40px; right: 40px; width: auto; }
+  .np-lyrics { order: 1; flex: 1 1 auto; min-width: 0; max-width: 760px; height: 62vh; margin: 0; text-align: left; }
+  .lyr { text-align: left; }
+  .np-side { order: 2; flex: none; width: calc(var(--cov) * 1.3); }
+  .np-prog, .np-ctrl, .np-actions { display: none; }
+  #mini.desk .seek { flex: 1; }
+}
