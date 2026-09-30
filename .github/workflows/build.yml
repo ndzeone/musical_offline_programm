@@ -101,7 +101,10 @@ jobs:
           grep -q "library saved: true" "$GITHUB_WORKSPACE/windows-shots/report.txt"
       - name: Проверка установщика (тихая установка)
         shell: pwsh
+        timeout-minutes: 8
         run: |
+          Get-Process MuzykaOffline -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 2
           $setup = Get-ChildItem windows/dist/Muzyka-*-Setup.exe | Select-Object -First 1
           "Установщик: $($setup.Name), $([math]::Round($setup.Length / 1MB)) МБ"
           Get-ChildItem windows/dist | Format-Table Name, Length

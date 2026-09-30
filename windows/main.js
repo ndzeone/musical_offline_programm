@@ -262,7 +262,9 @@ function runSnapshots() {
     }
     fs.writeFileSync(path.join(out, 'report.txt'), report.join('\n') + '\n');
     console.log(report.join('\n'));
+    win.destroy();
     app.exit(0);
+    setTimeout(() => process.exit(0), 3000);
   });
 }
 
