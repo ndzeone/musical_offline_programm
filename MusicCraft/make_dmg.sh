@@ -29,6 +29,11 @@ cat > "$T/Как открыть.txt" <<'TXT'
 Нужна macOS 14 (Sonoma) или новее. Работает на Mac с Apple silicon и Intel.
 TXT
 rm -f "$DMG"
-hdiutil create -volname "$NAME" -srcfolder "$T" -ov -format UDZO -fs HFS+ "$DMG" >/dev/null
+# hdiutil иногда отвечает «Resource busy» (система проверяет файлы) — пробуем ещё раз
+for i in 1 2 3 4 5; do
+  if hdiutil create -volname "$NAME" -srcfolder "$T" -ov -format UDZO -fs HFS+ "$DMG" >/dev/null; then break; fi
+  [ "$i" = 5 ] && exit 1
+  echo "hdiutil занят, повтор через $((i * 5)) с…"; sleep $((i * 5))
+done
 rm -rf "$(dirname "$T")"
 echo "✓ Готово: $DMG"
