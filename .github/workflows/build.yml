@@ -104,21 +104,21 @@ jobs:
         timeout-minutes: 8
         run: |
           Get-Process MuzykaOffline -ErrorAction SilentlyContinue | Stop-Process -Force
-          Start-Sleep -Seconds 2
           $setup = Get-ChildItem windows/dist/Muzyka-*-Setup.exe | Select-Object -First 1
-          "Установщик: $($setup.Name), $([math]::Round($setup.Length / 1MB)) МБ"
-          Get-ChildItem windows/dist | Format-Table Name, Length
-          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru
-          $p.WaitForExit()
+          "Установщик: $($setup.Name), $([math]::Round($setup.Length / 1MB)) МБ" | Tee-Object -Append windows-shots/report.txt
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S', '/currentuser' -PassThru
           $exe = $null
-          for ($i = 0; $i -lt 60 -and -not $exe; $i++) {
-            $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Recurse -Filter MuzykaOffline.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $exe) { Start-Sleep -Seconds 2 }
+          for ($i = 0; $i -lt 90 -and -not ($exe -and $p.HasExited); $i++) {
+            Start-Sleep -Seconds 2
+            if (-not $exe) { $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Recurse -Filter MuzykaOffline.exe -ErrorAction SilentlyContinue | Select-Object -First 1 }
           }
+          "Установщик закончил работу: $($p.HasExited)" | Tee-Object -Append windows-shots/report.txt
+          Get-Process | Where-Object { $_.ProcessName -like 'Muzyka*' } | Format-Table ProcessName, Id, Path -AutoSize | Out-String | Write-Host
           if (-not $exe) { throw 'программа не установилась' }
+          "Установлено: $($exe.FullName)" | Tee-Object -Append windows-shots/report.txt
           $lnk = Get-ChildItem "$env:USERPROFILE\Desktop", "$env:PUBLIC\Desktop" -Filter *.lnk -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
           "Ярлыки на рабочем столе: $lnk" | Tee-Object -Append windows-shots/report.txt
-          "Установлено: $($exe.FullName)" | Tee-Object -Append windows-shots/report.txt
+          Get-Process | Where-Object { $_.ProcessName -like 'Muzyka*' } | Stop-Process -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item $setup.FullName out/
       - uses: actions/upload-artifact@v4
