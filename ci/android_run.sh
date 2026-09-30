@@ -14,10 +14,16 @@ for f in "$MUSIC"/*.mp3; do
   adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file:///sdcard/Music/$(basename "$f")" > /dev/null 2>&1 || true
 done
 adb shell content call --uri content://media --method scan_volume --arg external_primary > /dev/null 2>&1 || true
-# ждём, пока медиатека увидит все три трека
-for i in $(seq 1 30); do
+# ждём, пока медиатека разберёт все три трека (на эмуляторе иногда приходится просить ещё раз)
+scan_all() {
+  for f in "$MUSIC"/*.mp3; do
+    adb shell content call --uri content://media/external/file --method scan_file --arg "/storage/emulated/0/Music/$(basename "$f")" > /dev/null 2>&1 || true
+  done
+}
+for i in $(seq 1 60); do
   N=$(adb shell content query --uri content://media/external/audio/media --projection title:is_music 2>/dev/null | grep -c "is_music=1")
   [ "${N:-0}" -ge 3 ] && break
+  if [ $((i % 10)) = 1 ]; then scan_all; fi
   sleep 2
 done
 adb shell content query --uri content://media/external/audio/media --projection title:artist:is_music:duration || true
