@@ -1298,7 +1298,8 @@ struct Hearts: View {
         }
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 0).onChanged { g in
-            m.setVolume(((g.location.x / 19) * 2).rounded(.up) / 2 / 10)
+            let x = Double(g.location.x)
+            m.setVolume(((x / 19) * 2).rounded(.up) / 2 / 10)
         })
         .tip("Громкость: \(Int((m.volume * 100).rounded()))%", offset: -44)
     }
