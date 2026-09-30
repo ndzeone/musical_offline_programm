@@ -133,12 +133,25 @@ struct SceneView: View {
 
     var body: some View {
         let stop = paused || m.animationsPaused || (!preview && !m.visual.liveBackground)
-        TimelineView(.animation(minimumInterval: preview ? 1.0 / 15 : m.frameInterval, paused: stop)) { tl in
-            Canvas(rendersAsynchronously: false) { ctx, size in
-                let now = tl.date.timeIntervalSinceReferenceDate
-                let input = preview ? PlayerModel.previewInput(now: now) : m.sceneInput(now: now)
-                engine.draw(&ctx, size: size, now: now, input: input, id: background, shared: !preview)
+        // Фон мягкий: рисуем его в пониженном разрешении и растягиваем — нагрузка в 2–4 раза меньше.
+        // На паузе (ничего не играет) — не чаще 30 кадров.
+        let q = preview ? 1 : CGFloat(max(0.5, min(1, m.visual.quality)))
+        let idle = !preview && m.visual.idleSlow && !m.isPlaying
+        let interval = preview ? 1.0 / 15 : (idle ? max(m.frameInterval ?? 0, 1.0 / 30) : m.frameInterval)
+        GeometryReader { g in
+            TimelineView(.animation(minimumInterval: interval, paused: stop)) { tl in
+                Canvas(rendersAsynchronously: false) { ctx, size in
+                    let now = tl.date.timeIntervalSinceReferenceDate
+                    let input = preview ? PlayerModel.previewInput(now: now) : m.sceneInput(now: now)
+                    ctx.scaleBy(x: q, y: q)
+                    engine.draw(&ctx, size: CGSize(width: size.width / q, height: size.height / q), now: now, input: input,
+                                id: background, shared: !preview)
+                }
+                .frame(width: (g.size.width * q).rounded(), height: (g.size.height * q).rounded())
+                .scaleEffect(1 / q, anchor: .topLeading)
             }
+            .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
+            .clipped()
         }
     }
 }

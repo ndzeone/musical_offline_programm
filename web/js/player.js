@@ -13,11 +13,13 @@
     sentAt: 0,
     playing: false,      // пользователь хочет, чтобы играло
     buffering: false,
+    modeOverride: null,  // плейлист с треками площадок: свой режим для файлов (без повтора)
     pos: 0, dur: 0,
     order: [], op: -1,   // порядок игры (Windows / браузер)
     wants: false, failures: 0, pendingSeek: 0,
     ext: null,           // что играет в другом приложении (Android)
     extList: [],
+    site: null,          // что играет на сайте площадки во встроенном браузере (sites.js)
     lastTick: 0,
     lastLocal: 0,
     listeners: [],
@@ -33,6 +35,7 @@
     if (Player.audio) return Player.audio;
     var a = new Audio();
     a.preload = 'auto';
+    a.volume = Math.max(0, Math.min(1, Store.settings.volume != null ? +Store.settings.volume : 1));
     a.addEventListener('timeupdate', function () { Player.pos = a.currentTime; if (a.duration) Player.dur = a.duration; });
     a.addEventListener('playing', function () { Player.failures = 0; Player.buffering = false; Player.playing = true; emit(); });
     a.addEventListener('waiting', function () { Player.buffering = true; });
@@ -99,10 +102,12 @@
     for (var i = a.length - 1; i > 0; i--) { var j = Math.random() * (i + 1) | 0, t = a[i]; a[i] = a[j]; a[j] = t; }
     return a;
   }
+  function mode() { return Player.modeOverride || { shuffle: Store.settings.shuffle, repeat: Store.settings.repeat }; }
+  Player.mode = mode;
   function buildOrder(cur) {
     var n = Player.queue.length, o = [];
     for (var i = 0; i < n; i++) o.push(i);
-    if (Store.settings.shuffle && n > 1) {
+    if (mode().shuffle && n > 1) {
       shuffled(o);
       var k = o.indexOf(cur); o[k] = o[0]; o[0] = cur;
       Player.op = 0;
@@ -129,7 +134,7 @@
     Player.pos = start; Player.dur = Player.queue[Player.index].duration; Player.lastTick = Date.now();
     if (android) {
       Player.sentAt = Date.now();
-      NB.setMode(Store.settings.shuffle, Store.settings.repeat);
+      NB.setMode(mode().shuffle, mode().repeat);
       NB.setQueue(Player.qid, Player.queue, Player.index, play, start);
       Player.playing = play; Player.buffering = play;
     } else {
@@ -137,13 +142,25 @@
       loadHtml(play, start);
     }
     Player.lastLocal = Date.now();
+    if (play) Player.quietSites();
     emit();
   };
   Player.current = function () { return Player.queue[Player.index] || null; };
+  // Своя музыка заиграла — сайты площадок замолкают (как на Mac: играет что-то одно)
+  Player.quietSites = function () { if (window.Sites) Sites.pauseAll(); if (Player.site) { Player.site.playing = false; Player.site.stamp = 0; } };
+  // Заиграл сайт — своя музыка на паузу
+  Player.yieldToSite = function () {
+    if (!Player.playing) return;
+    if (android) NB.control('pause'); else if (Player.audio) { Player.wants = false; Player.audio.pause(); }
+    Player.pos = Player.time(); Player.playing = false; Player.lastTick = Date.now();
+    emit();
+  };
 
   Player.toggle = function () {
+    if (Player.useSite()) { Sites.cmd(Player.site.tab, Player.site.playing ? 'pause' : 'play'); Player.site.playing = !Player.site.playing; Player.site.stamp = Date.now(); emit(); return; }
     if (Player.useExt()) { NB.sessionControl(Player.ext.pkg, Player.ext.playing ? 'pause' : 'play'); Player.ext.playing = !Player.ext.playing; emit(); return; }
     if (!Player.current()) return;
+    if (!Player.playing) Player.quietSites();
     if (android) {
       NB.control(Player.playing ? 'pause' : 'play');
       if (Player.playing) Player.pos = Player.time();
@@ -165,26 +182,38 @@
   }
   // auto — трек доиграл сам
   Player.next = function (auto) {
+    if (!auto && window.Runner && Runner.active && Runner.step(1)) return;
+    if (!auto && Player.useSite()) { if (!(window.Runner && Runner.step(1))) Sites.cmd(Player.site.tab, 'nexttrack'); return; }
     if (!auto && Player.useExt()) { NB.sessionControl(Player.ext.pkg, 'next'); return; }
     if (!Player.queue.length) return;
     if (android) { androidSkip('next'); return; }
-    var n = Player.queue.length, rep = Store.settings.repeat;
+    var n = Player.queue.length, rep = mode().repeat;
     if (auto && rep === 'one') { var a = html(); a.currentTime = 0; startHtml(); return; }
     var nop = Player.op + 1;
     if (nop >= n) {
-      if (!auto || rep === 'all') { if (Store.settings.shuffle && n > 1) reshuffle(); nop = 0; }
-      else { Player.op = 0; Player.index = Player.order[0]; loadHtml(false, 0); emit(); return; }   // очередь кончилась
+      if (!auto || rep === 'all') { if (mode().shuffle && n > 1) reshuffle(); nop = 0; }
+      else {
+        Player.op = 0; Player.index = Player.order[0]; loadHtml(false, 0); emit();   // очередь кончилась
+        if (Player.onQueueEnd) Player.onQueueEnd();
+        return;
+      }
     }
     Player.op = nop; Player.index = Player.order[nop];
     loadHtml(true, 0); emit();
   };
   Player.prev = function () {
+    if (window.Runner && Runner.active && !Player.useSite() && Player.time() <= 3 && Runner.step(-1)) return;
+    if (Player.useSite()) {
+      if (Player.time() > 3) { Player.seek(0); return; }
+      if (!(window.Runner && Runner.step(-1))) Sites.cmd(Player.site.tab, 'previoustrack');
+      return;
+    }
     if (Player.useExt()) { NB.sessionControl(Player.ext.pkg, 'prev'); return; }
     if (!Player.queue.length) return;
     if (android) { androidSkip('prev'); return; }        // правило «3 секунды» служба выполняет сама
     if (Player.time() > 3) { Player.seek(0); if (!Player.playing) startHtml(); return; }
     var nop = Player.op - 1;
-    if (nop < 0) nop = Store.settings.repeat === 'all' ? Player.queue.length - 1 : 0;
+    if (nop < 0) nop = mode().repeat === 'all' ? Player.queue.length - 1 : 0;
     Player.op = nop; Player.index = Player.order[nop];
     loadHtml(true, 0); emit();
   };
@@ -197,6 +226,7 @@
   };
   Player.seek = function (t) {
     t = Math.max(0, t);
+    if (Player.useSite()) { Sites.cmd(Player.site.tab, 'seekto', t); Player.site.pos = t; Player.site.stamp = Date.now(); return; }
     if (Player.useExt()) { NB.sessionControl(Player.ext.pkg, 'seek', t); Player.ext.pos = t; Player.ext.stamp = Date.now(); return; }
     if (android) NB.control('seek', t);
     else { var a = html(); if (a.readyState > 0) a.currentTime = t; else Player.pendingSeek = t; }
@@ -208,12 +238,24 @@
     if (Player.highShelf) Player.highShelf.gain.value = Store.settings.treble || 0;
   };
   Player.setMode = function () {
-    if (android) NB.setMode(Store.settings.shuffle, Store.settings.repeat);
+    if (android) NB.setMode(mode().shuffle, mode().repeat);
     else if (Player.queue.length) buildOrder(Player.index);
+  };
+  // Громкость своей музыки (Windows; на телефоне — кнопками громкости)
+  Player.volume = function (v) {
+    if (v == null) return Player.audio ? Player.audio.volume : (Store.settings.volume || 0.8);
+    v = Math.max(0, Math.min(1, v));
+    Store.settings.volume = v; Store.saveSettings();
+    if (Player.audio) Player.audio.volume = v;
+    return v;
   };
 
   // Время сейчас (с досчётом между опросами службы)
   Player.time = function () {
+    if (Player.useSite()) {
+      var s = Player.site;
+      return s.playing ? Math.min(s.dur || 1e9, s.pos + (Date.now() - s.stamp) / 1000) : s.pos;
+    }
     if (Player.useExt()) {
       var e = Player.ext;
       return e.playing ? Math.min(e.dur || 1e9, e.pos + (Date.now() - e.stamp) / 1000) : e.pos;
@@ -221,18 +263,31 @@
     if (!android) return Player.audio && Player.audio.getAttribute('src') ? (Player.audio.readyState > 0 ? Player.audio.currentTime : Player.pos) : Player.pos;
     return Player.playing && !Player.buffering ? Math.min(Player.dur || 1e9, Player.pos + (Date.now() - Player.lastTick) / 1000) : Player.pos;
   };
-  Player.duration = function () { return Player.useExt() ? Player.ext.dur : Player.dur; };
-  Player.isPlaying = function () { return Player.useExt() ? Player.ext.playing : Player.playing; };
+  Player.duration = function () { return Player.useSite() ? Player.site.dur : Player.useExt() ? Player.ext.dur : Player.dur; };
+  Player.isPlaying = function () { return Player.useSite() ? Player.site.playing : Player.useExt() ? Player.ext.playing : Player.playing; };
 
-  // Что показывать: своё или то, что играет в другом приложении
+  // Что показывать: сайт площадки, другое приложение или своё
+  Player.useSite = function () {
+    var s = Player.site;
+    if (!s || !s.title) return false;
+    if (Player.playing) return false;
+    return s.playing || s.loading || (s.stamp > (Player.lastLocal || 0) && !(Player.ext && Player.ext.playing));
+  };
   Player.useExt = function () {
     if (!Player.ext) return false;
     if (Player.playing) return false;
+    if (Player.site && Player.site.playing) return false;
     return Player.ext.playing || !Player.current() || (Player.ext.stamp > (Player.lastLocal || 0));
   };
 
-  // Трек, который сейчас на экране (единый вид для обоих источников)
+  // Трек, который сейчас на экране (единый вид для всех источников)
   Player.now = function () {
+    if (Player.useSite()) {
+      var s = Player.site, sp = PLATFORMS[s.platform];
+      return { kind: 'site', key: U.webKey(s.artist || '', s.title || ''), title: s.title || '', artist: s.artist || '', album: s.album || '',
+               duration: s.dur || 0, platform: s.platform, app: sp ? sp.name : 'Сайт', tab: s.tab, art: s.art || null, loading: !!s.loading,
+               source: { web: { platform: s.platform || 'other', link: s.link || null } } };
+    }
     if (Player.useExt()) {
       var e = Player.ext, pl = PKG[e.pkg];
       return { kind: 'ext', key: U.webKey(e.artist || '', e.title || ''), title: e.title || '', artist: e.artist || '', album: e.album || '',
@@ -314,20 +369,30 @@
     };
     Object.keys(h).forEach(function (k) { try { ms.setActionHandler(k, h[k]); } catch (e) {} });
     Player.onChange(function () {
-      var t = Player.current();
+      var t = Player.now();
       if (!t) return;
-      if (metaFor !== t.uri) {
-        metaFor = t.uri;
+      if (metaFor !== t.key) {
+        var k = metaFor = t.key;
         var set = function (art) {
           try { ms.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: t.album || '', artwork: art ? [{ src: art, sizes: '400x400' }] : [] }); } catch (e) {}
         };
-        set(null);
-        var n = Player.now();
-        if (n && window.Art) Art.resolve(n).then(function (u) { if (u && metaFor === t.uri) set(u); });
+        set(t.art || null);
+        if (!t.art && window.Art) Art.resolve(t).then(function (u) { if (u && metaFor === k) set(u); });
       }
-      try { ms.playbackState = Player.playing ? 'playing' : 'paused'; } catch (e) {}
+      try { ms.playbackState = Player.isPlaying() ? 'playing' : 'paused'; } catch (e) {}
     });
   }
+
+  // Состояние сайта площадки (sites.js сообщает, что играет)
+  Player.setSite = function (st) {
+    var prev = Player.site;
+    Player.site = st;
+    var changed = !prev !== !st || (prev && st && (prev.title !== st.title || prev.artist !== st.artist || prev.playing !== st.playing ||
+                  prev.art !== st.art || prev.loading !== st.loading || prev.tab !== st.tab || Math.abs((prev.dur || 0) - (st.dur || 0)) > 1));
+    if (st && st.playing && (!prev || !prev.playing)) Player.yieldToSite();
+    if (changed) emit();
+  };
+  Player.emit = emit;
 
   window.Player = Player;
 })();

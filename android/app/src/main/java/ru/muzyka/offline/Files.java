@@ -86,6 +86,10 @@ final class Files {
     }
 
     static String readAll(InputStream in, int limit) throws IOException {
+        return new String(readBytes(in, limit), StandardCharsets.UTF_8);
+    }
+
+    static byte[] readBytes(InputStream in, int limit) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buf = new byte[16384];
         int n, total = 0;
@@ -94,6 +98,6 @@ final class Files {
             if (total > limit) break;
             out.write(buf, 0, n);
         }
-        return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        return out.toByteArray();
     }
 }

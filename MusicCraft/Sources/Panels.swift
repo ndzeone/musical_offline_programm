@@ -48,6 +48,7 @@ struct LibraryPage: View {
                 Spacer()
                 TButton("Файлы", icon: "plus", prominent: true) { m.openPanel() }
                 TButton("Папка", icon: "folder.badge.plus") { m.openFolderPanel() }
+                TButton(m.scanning ? "Ищу…" : "Вся музыка Mac", icon: "sparkle.magnifyingglass") { m.scanWholeMac() }
                 if !m.tracks.isEmpty { TButton("Очистить", icon: "trash") { m.clear() } }
             }
         } content: {
@@ -451,16 +452,66 @@ struct SettingsPage: View {
     var body: some View {
         PageCard {
             VStack(alignment: .leading, spacing: 14) {
-                PageTitle(title: "Настройки", subtitle: "Оформление, скорость работы и звук")
+                PageTitle(title: "Настройки", subtitle: "Оформление, скорость, звук, клавиши и профиль")
                 HStack(spacing: 8) {
                     ForEach(SettingsTab.allCases) { t in
                         TButton(t.title, icon: t.symbol, prominent: m.settingsTab == t) { m.settingsTab = t }
+                            .overlay(alignment: .topTrailing) {
+                                if dot(t) {
+                                    Circle().fill(Color(hex: theme.pixel ? 0x80FF20 : theme.accent)).frame(width: 9, height: 9)
+                                        .overlay(Circle().strokeBorder(Color.black.opacity(0.35), lineWidth: 1)).offset(x: 2, y: -2)
+                                }
+                            }
                     }
                 }
             }
         } content: {
             Scrolling {
                 SettingsBody().padding(.trailing, 8).padding(.bottom, 10)
+            }
+        }
+    }
+
+    private func dot(_ t: SettingsTab) -> Bool {
+        switch t {
+        case .general: if case .available = m.updateState { return true }; return NewFeatures.isNew("scan")
+        case .performance: return NewFeatures.isNew("perf")
+        case .keys: return NewFeatures.isNew("keys")
+        case .profile: return NewFeatures.isNew("profile")
+        case .look: return NewFeatures.isNew("liquidGlass")
+        default: return false
+        }
+    }
+}
+
+/// Карточка раздела настроек: значок, заголовок, содержимое.
+struct SettingsCard<Content: View>: View {
+    @Environment(\.theme) private var theme
+    let title: String
+    let icon: String
+    var badge: String?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color(hex: theme.pixel ? 0x3F3F3F : (theme.isLight ? theme.accent2 : theme.accent)))
+                    .frame(width: 20)
+                TText(title, size: 15, title: true, onPanel: true)
+                if let badge { NewBadge(feature: badge) }
+                Spacer(minLength: 0)
+            }
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if theme.pixel {
+                BevelBox(fill: 0xB5B5B5, light: 0xE0E0E0, dark: 0x6F6F6F, border: nil)
+            } else {
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(hex: theme.panelText, alpha: 0.05))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(hex: theme.border, alpha: 0.18), lineWidth: 1))
             }
         }
     }
@@ -476,9 +527,12 @@ struct SettingsBody: View {
         case .performance: PerformanceSettings()
         case .sound: SoundSettings()
         case .keys: KeysSettings()
+        case .profile: ProfileSettings()
         }
     }
 }
+
+private func hint(_ theme: Theme) -> UInt32 { theme.pixel ? 0x555555 : theme.panelDim }
 
 struct GeneralSettings: View {
     @EnvironmentObject var m: PlayerModel
@@ -486,34 +540,51 @@ struct GeneralSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            UpdatesSection()
-            SectionLabel(text: "Окно и уведомления").padding(.top, 6)
-            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
-                GridRow {
-                    TToggle(title: "Поверх всех окон", subtitle: "Плеер не прячется за другими программами", isOn: $m.alwaysOnTop)
-                    TToggle(title: "Сообщать о новом треке", subtitle: "Короткая надпись «Сейчас играет» внизу", isOn: $m.trackToasts)
+            SettingsCard(title: "Обновления", icon: "arrow.triangle.2.circlepath", badge: "updates") { UpdatesSection() }
+            SettingsCard(title: "Окно и уведомления", icon: "macwindow") {
+                Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                    GridRow {
+                        TToggle(title: "Поверх всех окон", subtitle: "Плеер не прячется за другими программами", isOn: $m.alwaysOnTop)
+                        TToggle(title: "Сообщать о новом треке", subtitle: "Короткая надпись «Сейчас играет» внизу", isOn: $m.trackToasts)
+                    }
+                    GridRow {
+                        TToggle(title: "Искать текст песен сам", subtitle: "Выключи, чтобы искать только по кнопке", isOn: $m.autoLyrics)
+                        TToggle(title: "Загружать последний аккаунт", subtitle: "Музыка из него включается без ожидания", isOn: $m.preloadLast)
+                    }
                 }
-                GridRow {
-                    TToggle(title: "Искать текст песен сам", subtitle: "Выключи, чтобы искать только по кнопке", isOn: $m.autoLyrics)
-                    TToggle(title: "Загружать последний аккаунт", subtitle: "Музыка из него включается без ожидания", isOn: $m.preloadLast)
-                }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            SectionLabel(text: "Библиотека").padding(.top, 6)
-            HStack(spacing: 10) {
-                TButton("Сохранить копию…", icon: "square.and.arrow.up") { m.exportLibrary() }
-                TButton("Загрузить копию…", icon: "square.and.arrow.down") { m.importLibrary() }
-                Spacer()
-            }
-            TText("Плейлисты и «Любимые» сохраняются сами, а прошлая версия всегда остаётся резервной копией. Копию библиотеки можно открыть в версии для Android или Windows.",
-                  size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true)
                 .fixedSize(horizontal: false, vertical: true)
-            SectionLabel(text: "Размер обложки").padding(.top, 6)
-            TSegmented(options: CoverSize.allCases.map { ($0, $0.title) }, value: $m.coverSize)
-            SectionLabel(text: "Подсветка текста песни").padding(.top, 6)
-            TSegmented(options: KaraokeMode.allCases.map { ($0, $0.title) }, value: $m.karaokeMode)
-            TText("«По буквам» — как в караоке, буквы закрашиваются по ходу песни. «Строка целиком» — текущая строка сразу яркая.",
-                  size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true)
+            }
+            SettingsCard(title: "Вся музыка на Mac", icon: "sparkle.magnifyingglass", badge: "scan") {
+                TText("Найду песни в любых папках и на подключённых дисках, добавлю их в «Мои файлы» и уберу файлы, которых больше нет.",
+                      size: 12, color: hint(theme), onPanel: true).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    TButton(m.scanning ? "Ищу…" : "Найти и проверить всю музыку", icon: "sparkle.magnifyingglass", prominent: true) { m.scanWholeMac() }
+                        .disabled(m.scanning)
+                    if m.scanning { ProgressView().controlSize(.small) }
+                    if let r = m.scanResult, !m.scanning {
+                        TText("Песен: \(r.found) · новых: \(r.fresh) · исчезнувших убрано: \(r.missing)", size: 12, onPanel: true)
+                    }
+                    Spacer()
+                }
+            }
+            SettingsCard(title: "Библиотека", icon: "books.vertical.fill") {
+                HStack(spacing: 10) {
+                    TButton("Сохранить копию…", icon: "square.and.arrow.up") { m.exportLibrary() }
+                    TButton("Загрузить копию…", icon: "square.and.arrow.down") { m.importLibrary() }
+                    Spacer()
+                }
+                TText("Плейлисты и «Любимые» сохраняются сами, а прошлая версия всегда остаётся резервной копией. Копию библиотеки можно открыть в версии для Android или Windows.",
+                      size: 11, color: hint(theme), onPanel: true)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            SettingsCard(title: "Текст песни и обложка", icon: "quote.bubble.fill") {
+                SectionLabel(text: "Размер обложки")
+                TSegmented(options: CoverSize.allCases.map { ($0, $0.title) }, value: $m.coverSize)
+                SectionLabel(text: "Подсветка текста песни").padding(.top, 4)
+                TSegmented(options: KaraokeMode.allCases.map { ($0, $0.title) }, value: $m.karaokeMode)
+                TText("«По буквам» — как в караоке, буквы закрашиваются по ходу песни. «Строка целиком» — текущая строка сразу яркая.",
+                      size: 11, color: hint(theme), onPanel: true)
+            }
         }
     }
 }
@@ -524,58 +595,58 @@ struct LookSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionLabel(text: "Тема — меняет всё оформление")
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], spacing: 12) {
-                ForEach(Theme.all, id: \.id) { t in
-                    ThemeCard(t: t, selected: m.theme == t.id) { m.setTheme(t.id) }
+            SettingsCard(title: "Тема — меняет всё оформление", icon: "paintpalette.fill") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], spacing: 12) {
+                    ForEach(Theme.all, id: \.id) { t in
+                        ThemeCard(t: t, selected: m.theme == t.id) { m.setTheme(t.id) }
+                    }
                 }
             }
-            SectionLabel(text: "Живой фон").padding(.top, 8)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
-                ForEach(BackgroundID.allCases) { b in
-                    BackgroundCard(bg: b, selected: m.background == b) { m.background = b }
+            SettingsCard(title: "Живой фон", icon: "sparkles.tv.fill") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                    ForEach(BackgroundID.allCases) { b in
+                        BackgroundCard(bg: b, selected: m.background == b) { m.background = b }
+                    }
                 }
+                TText("Превью оживают, когда наводишь на них мышь.", size: 11, color: hint(theme), onPanel: true)
             }
-            HStack(spacing: 8) {
-                SectionLabel(text: "Панели")
-                NewBadge(feature: "roundSidebar")
+            SettingsCard(title: "Панели", icon: "sidebar.left", badge: "liquidGlass") {
+                Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                    GridRow {
+                        TToggle(title: "Закруглённая боковая панель", subtitle: "Меню — отдельной карточкой со скруглёнными углами",
+                                isOn: $m.sidebarRounded, badge: "roundSidebar")
+                        TToggle(title: "Жидкое стекло", subtitle: "Меню и плеер — прозрачное стекло с бликом. На светлой теме — светлое",
+                                isOn: $m.liquidGlass, badge: "liquidGlass")
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.top, 8)
-            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
-                GridRow {
-                    TToggle(title: "Закруглённая боковая панель", subtitle: "Меню — отдельной карточкой со скруглёнными углами",
-                            isOn: $m.sidebarRounded, badge: "roundSidebar")
-                    TToggle(title: "Жидкое стекло", subtitle: "Меню и плеер — прозрачное стекло с бликом, как в macOS 26",
-                            isOn: $m.liquidGlass, badge: "liquidGlass")
+            SettingsCard(title: "Раскладка экрана", icon: "rectangle.split.2x1.fill") {
+                HStack(spacing: 12) {
+                    ForEach(StageLayout.allCases) { l in
+                        OptionCard(symbol: l.symbol, title: l.title, subtitle: l.subtitle, selected: m.stageLayout == l) { m.stageLayout = l }
+                    }
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            SectionLabel(text: "Раскладка экрана").padding(.top, 8)
-            HStack(spacing: 12) {
-                ForEach(StageLayout.allCases) { l in
-                    OptionCard(symbol: l.symbol, title: l.title, subtitle: l.subtitle, selected: m.stageLayout == l) { m.stageLayout = l }
+            SettingsCard(title: "Красота", icon: "wand.and.stars") {
+                TSlider(value: $m.textScale, range: 0.6...1.6, step: 0.1) { "Размер текста песни: \(Int(($0 * 100).rounded()))%" }
+                Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                    GridRow {
+                        TToggle(title: "Свечение текста и обложки", subtitle: "Мягкий неоновый ореол", isOn: $m.visual.glow)
+                        TToggle(title: "Стеклянные панели", subtitle: "Размытие фона под меню и плеером", isOn: $m.visual.glass)
+                    }
+                    GridRow {
+                        TToggle(title: "Размытие соседних строк", subtitle: "Фокус на текущей строке", isOn: $m.visual.blurLines)
+                        TToggle(title: "Пульс под басы", subtitle: "Текст и обложка «дышат» в такт", isOn: $m.visual.bassPulse)
+                    }
+                    GridRow {
+                        TToggle(title: "Крутящаяся пластинка", subtitle: "Выезжает из-за обложки", isOn: $m.visual.vinylSpin)
+                        TToggle(title: "Ноты, сердечки и молнии", subtitle: "Вспышки на ударах", isOn: $m.visual.particles)
+                    }
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            SectionLabel(text: "Красота").padding(.top, 8)
-            TSlider(value: $m.textScale, range: 0.6...1.6, step: 0.1) { "Размер текста песни: \(Int(($0 * 100).rounded()))%" }
-            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
-                GridRow {
-                    TToggle(title: "Свечение текста и обложки", subtitle: "Мягкий неоновый ореол", isOn: $m.visual.glow)
-                    TToggle(title: "Стеклянные панели", subtitle: "Размытие фона под меню и плеером", isOn: $m.visual.glass)
-                }
-                GridRow {
-                    TToggle(title: "Размытие соседних строк", subtitle: "Фокус на текущей строке", isOn: $m.visual.blurLines)
-                    TToggle(title: "Пульс под басы", subtitle: "Текст и обложка «дышат» в такт", isOn: $m.visual.bassPulse)
-                }
-                GridRow {
-                    TToggle(title: "Крутящаяся пластинка", subtitle: "Выезжает из-за обложки", isOn: $m.visual.vinylSpin)
-                    TToggle(title: "Ноты, сердечки и молнии", subtitle: "Вспышки на ударах", isOn: $m.visual.particles)
-                }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            TText("Для музыки из аккаунтов фон двигается плавно сам: звук сайтов приложению недоступен.",
-                  size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true)
         }
     }
 }
@@ -595,7 +666,7 @@ struct OptionCard: View {
                 Image(systemName: symbol).font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Color(hex: selected ? (theme.pixel ? 0x80FF20 : theme.accent) : (theme.pixel ? 0x3F3F3F : theme.panelText)))
                 TText(title, size: 14, title: true, onPanel: true)
-                TText(subtitle, size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true)
+                TText(subtitle, size: 11, color: hint(theme), onPanel: true)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -608,10 +679,11 @@ struct OptionCard: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: theme.panelText, alpha: hover ? 0.1 : 0.05))
                 }
             }
+            // рамка одной толщины всегда: выбранная карточка не «прыгает» на пиксели
             .overlay {
                 if !theme.pixel {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color(hex: selected ? theme.accent : theme.border, alpha: selected ? 1 : 0.2), lineWidth: selected ? 2.5 : 1)
+                        .strokeBorder(Color(hex: selected ? theme.accent : theme.border, alpha: selected ? 1 : 0.2), lineWidth: 2)
                 }
             }
             .contentShape(Rectangle())
@@ -630,51 +702,58 @@ struct PerformanceSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionLabel(text: "Режим")
-            HStack(spacing: 12) {
-                ForEach(PerfMode.allCases) { p in
-                    OptionCard(symbol: p.symbol, title: p.title, subtitle: p.subtitle, selected: m.perfMode == p) { m.applyPerf(p) }
+            SettingsCard(title: "Режим", icon: "gauge.with.dots.needle.67percent", badge: "perf") {
+                HStack(spacing: 12) {
+                    ForEach(PerfMode.allCases) { p in
+                        OptionCard(symbol: p.symbol, title: p.title, subtitle: p.subtitle, selected: m.perfMode == p) { m.applyPerf(p) }
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                if m.perfMode == nil {
+                    TText("Сейчас свой набор настроек.", size: 11, color: hint(theme), onPanel: true)
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
-            if m.perfMode == nil {
-                TText("Сейчас свой набор настроек.", size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true)
-            }
-
-            SectionLabel(text: "Анимация").padding(.top, 6)
-            TSegmented(options: [(30, "30 кадров"), (60, "60 кадров"), (0, "Как у экрана")], value: $m.visual.fps)
-            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
-                GridRow {
-                    TToggle(title: "Живой фон", subtitle: "Выключи, и фон станет картинкой", isOn: $m.visual.liveBackground)
-                    TToggle(title: "Пауза, когда окна не видно", subtitle: "Свернул или закрыл другими окнами — не рисуем", isOn: $m.pauseHidden)
+            SettingsCard(title: "Живой фон и анимация", icon: "sparkles") {
+                SectionLabel(text: "Кадров в секунду")
+                TSegmented(options: [(30, "30"), (60, "60"), (120, "120"), (0, "Как у экрана")], value: $m.visual.fps)
+                SectionLabel(text: "Качество фона").padding(.top, 4)
+                TSegmented(options: [(0.5, "Низкое"), (0.75, "Среднее"), (1.0, "Высокое")], value: $m.visual.quality)
+                TText("Фон мягкий: на «среднем» разница почти незаметна, а нагрузка в 2 раза меньше.", size: 11, color: hint(theme), onPanel: true)
+                Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                    GridRow {
+                        TToggle(title: "Живой фон", subtitle: "Выключи, и фон станет картинкой", isOn: $m.visual.liveBackground)
+                        TToggle(title: "На паузе фон отдыхает", subtitle: "Когда музыка не играет — 30 кадров", isOn: $m.visual.idleSlow)
+                    }
+                    GridRow {
+                        TToggle(title: "Пауза, когда окна не видно", subtitle: "Свернул или закрыл другими окнами — не рисуем", isOn: $m.pauseHidden)
+                        TToggle(title: "Крутящаяся пластинка", subtitle: "Вращение почти ничего не стоит", isOn: $m.visual.vinylSpin)
+                    }
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .fixedSize(horizontal: false, vertical: true)
-
-            SectionLabel(text: "Аккаунты").padding(.top, 6)
-            TText("Каждый загруженный аккаунт — это отдельный сайт в памяти (обычно 200–500 МБ). Неактивные можно выгружать: вход сохранится, аккаунт загрузится снова, когда нажмёшь на него.",
-                  size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true)
-            TSegmented(options: [(0, "Не выгружать"), (5, "Через 5 мин"), (20, "Через 20 мин"), (60, "Через час")], value: $m.unloadAfter)
-            TToggle(title: "Загружать последний аккаунт при запуске",
-                    subtitle: "Тогда музыка из него включается сразу, без ожидания", isOn: $m.preloadLast)
-
-            SectionLabel(text: "Нагрузка сейчас").padding(.top, 6)
-            HStack(spacing: 12) {
-                stat("Процессор", load.cpuText, "gauge.with.dots.needle.33percent")
-                stat("Память", load.memText, "memorychip")
-                stat("Аккаунтов в памяти", "\(m.loadedSessions.count) из \(m.accounts.count)", "person.2.fill")
+            SettingsCard(title: "Аккаунты площадок", icon: "person.2.fill") {
+                TText("Каждый загруженный аккаунт — это отдельный сайт в памяти (обычно 200–500 МБ). Неактивные можно выгружать: вход сохранится, аккаунт загрузится снова, когда нажмёшь на него.",
+                      size: 11, color: hint(theme), onPanel: true).fixedSize(horizontal: false, vertical: true)
+                TSegmented(options: [(0, "Не выгружать"), (5, "Через 5 мин"), (20, "Через 20 мин"), (60, "Через час")], value: $m.unloadAfter)
+                TToggle(title: "Загружать последний аккаунт при запуске",
+                        subtitle: "Тогда музыка из него включается сразу, без ожидания", isOn: $m.preloadLast)
             }
-            HStack(spacing: 10) {
-                TText("Сохранённые тексты: \(fmtBytes(cacheSize))",
-                      size: 12, onPanel: true)
-                Spacer()
-                TButton("Очистить тексты", icon: "trash") { LyricsCache.clear(); cacheSize = LyricsCache.size() }
-            }
-            HStack(spacing: 10) {
-                TText("Сохранённые обложки: \(fmtBytes(artSize))",
-                      size: 12, onPanel: true)
-                Spacer()
-                TButton("Очистить обложки", icon: "trash") { ArtworkLoader.clearDisk(); artSize = ArtworkLoader.diskSize() }
+            SettingsCard(title: "Нагрузка сейчас", icon: "waveform.path.ecg") {
+                HStack(spacing: 12) {
+                    stat("Процессор", load.cpuText, "gauge.with.dots.needle.33percent")
+                    stat("Память", load.memText, "memorychip")
+                    stat("Аккаунтов в памяти", "\(m.loadedSessions.count) из \(m.accounts.count)", "person.2.fill")
+                }
+                HStack(spacing: 10) {
+                    TText("Сохранённые тексты: \(fmtBytes(cacheSize))", size: 12, onPanel: true)
+                    Spacer()
+                    TButton("Очистить тексты", icon: "trash") { LyricsCache.clear(); cacheSize = LyricsCache.size() }
+                }
+                HStack(spacing: 10) {
+                    TText("Сохранённые обложки: \(fmtBytes(artSize))", size: 12, onPanel: true)
+                    Spacer()
+                    TButton("Очистить обложки", icon: "trash") { ArtworkLoader.clearDisk(); artSize = ArtworkLoader.diskSize() }
+                }
             }
         }
         .onAppear { load.start() }
@@ -686,12 +765,12 @@ struct PerformanceSettings: View {
             Image(systemName: symbol).font(.system(size: 15, weight: .bold))
                 .foregroundStyle(Color(hex: theme.pixel ? 0x3F3F3F : theme.accent))
             TText(value, size: 18, title: true, onPanel: true)
-            TText(title, size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true)
+            TText(title, size: 11, color: hint(theme), onPanel: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background {
-            if theme.pixel { BevelBox(fill: 0xB5B5B5, light: 0x8B8B8B, dark: 0xE0E0E0, border: nil) } else {
+            if theme.pixel { BevelBox(fill: 0xC6C6C6, light: 0x8B8B8B, dark: 0xE0E0E0, border: nil) } else {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(hex: theme.panelText, alpha: 0.05))
             }
         }
@@ -745,56 +824,223 @@ final class ResourceMonitor: ObservableObject {
     }
 }
 
+
 struct SoundSettings: View {
     @EnvironmentObject var m: PlayerModel
     @Environment(\.theme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Grid(horizontalSpacing: 12, verticalSpacing: 14) {
-                GridRow {
-                    TSlider(value: $m.volume, range: 0...1, step: 0.05) { "Громкость: \(Int(($0 * 100).rounded()))%" }
-                    TSlider(value: $m.bass, range: -10...24, step: 1) { $0 == 0 ? "Басы: выкл" : String(format: "Басы: %+.0f дБ", $0) }
-                }
-                GridRow {
-                    TSlider(value: $m.bassFreq, range: 40...250, step: 5) { "Частота басов: \(Int($0)) Гц" }
-                    TSlider(value: $m.treble, range: -10...12, step: 1) { $0 == 0 ? "Высокие: норма" : String(format: "Высокие: %+.0f дБ", $0) }
-                }
-            }
-            SectionLabel(text: "Басы, быстрый выбор").padding(.top, 6)
-            HStack(spacing: 8) {
-                ForEach([("Выкл", 0.0), ("Лёгкие", 6.0), ("Мощные", 12.0), ("Землетрясение", 20.0)], id: \.1) { name, v in
-                    TButton(name, prominent: m.bass == v, width: 160) { m.bass = v }
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsCard(title: "Звук", icon: "speaker.wave.2.fill") {
+                Grid(horizontalSpacing: 12, verticalSpacing: 14) {
+                    GridRow {
+                        TSlider(value: $m.volume, range: 0...1, step: 0.05) { "Громкость: \(Int(($0 * 100).rounded()))%" }
+                        TSlider(value: $m.bass, range: -10...24, step: 1) { $0 == 0 ? "Басы: выкл" : String(format: "Басы: %+.0f дБ", $0) }
+                    }
+                    GridRow {
+                        TSlider(value: $m.bassFreq, range: 40...250, step: 5) { "Частота басов: \(Int($0)) Гц" }
+                        TSlider(value: $m.treble, range: -10...12, step: 1) { $0 == 0 ? "Высокие: норма" : String(format: "Высокие: %+.0f дБ", $0) }
+                    }
                 }
             }
-            TText("Басы и эквалайзер работают для файлов. Музыку из аккаунтов играют сами сайты, и её звук приложение не меняет.",
-                  size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true)
+            SettingsCard(title: "Басы, быстрый выбор", icon: "hifispeaker.2.fill") {
+                HStack(spacing: 8) {
+                    ForEach([("Выкл", 0.0), ("Лёгкие", 6.0), ("Мощные", 12.0), ("Землетрясение", 20.0)], id: \.1) { name, v in
+                        TButton(name, prominent: m.bass == v, width: 160) { m.bass = v }
+                    }
+                }
+                TText("Басы и эквалайзер работают для файлов. Музыку из аккаунтов играют сами сайты, и её звук приложение не меняет.",
+                      size: 11, color: hint(theme), onPanel: true)
+            }
         }
     }
 }
 
+/// Клавиши: любую можно поменять — нажми на неё и затем новую.
 struct KeysSettings: View {
     @Environment(\.theme) private var theme
-
-    private let keys: [(String, String)] = [
-        ("Пробел", "пауза / играть"), ("← →", "перемотка на 5 секунд"), ("↑ ↓", "громкость"),
-        ("N / B", "следующий / предыдущий трек"), ("R / S", "повтор / перемешка"), ("E", "мои файлы"),
-        ("L", "весь текст и поиск"), ("Esc", "закрыть окно / назад / настройки"), ("1–9", "кнопки хотбара (в теме «Майнкрафт»)"),
-        ("F3", "отладка: источник, нагрузка, текст"), ("⌘O / ⇧⌘O", "открыть файлы / папку"), ("⌘ ← / ⌘ →", "предыдущий / следующий трек"),
-        ("⇧⌘A", "подключить площадку"), ("⌘ ,", "настройки"),
-    ]
+    @ObservedObject private var kb = KeyBinds.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(keys, id: \.0) { k, v in
-                HStack(spacing: 14) {
-                    TText(k, size: 13, title: true, onPanel: true).frame(width: 150, alignment: .leading)
-                    TText(v, size: 13, color: theme.pixel ? 0x3F3F3F : theme.panelDim, onPanel: true)
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsCard(title: "Свои клавиши", icon: "keyboard.fill", badge: "keys") {
+                TText("Нажми на клавишу справа, затем новую. Можно с ⌘ ⌥ ⌃ ⇧. ⌫ — убрать, Esc — отмена.",
+                      size: 12, color: hint(theme), onPanel: true)
+                VStack(spacing: 6) {
+                    ForEach(KeyAction.allCases) { a in
+                        HStack(spacing: 14) {
+                            TText(a.title, size: 13, onPanel: true)
+                            Spacer()
+                            let cap = kb.capturing == a
+                            TButton(cap ? "Нажми клавишу…" : kb.bind(a).name, prominent: cap, width: 170) {
+                                kb.capturing = cap ? nil : a
+                            }
+                        }
+                    }
+                }
+                HStack {
+                    TButton("Вернуть как было", icon: "arrow.uturn.backward") { kb.reset() }
+                    Spacer()
                 }
             }
-            TText("Клавиши не мешают печатать: когда открыт сайт площадки или поле ввода, они работают как обычно.",
-                  size: 11, color: theme.pixel ? 0x555555 : theme.panelDim, onPanel: true).padding(.top, 8)
+            SettingsCard(title: "Всегда", icon: "command") {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach([("Esc", "закрыть окно / назад"), ("1–9", "кнопки хотбара (в теме «Майнкрафт»)"),
+                              ("⌘O / ⇧⌘O", "открыть файлы / папку"), ("⌘ ← / ⌘ →", "предыдущий / следующий трек"),
+                              ("⇧⌘A", "подключить площадку"), ("⌘ ,", "настройки")], id: \.0) { k, v in
+                        HStack(spacing: 14) {
+                            TText(k, size: 13, title: true, onPanel: true).frame(width: 150, alignment: .leading)
+                            TText(v, size: 13, color: theme.pixel ? 0x3F3F3F : theme.panelDim, onPanel: true)
+                        }
+                    }
+                }
+                TText("Клавиши не мешают печатать: когда открыт сайт площадки или поле ввода, они работают как обычно.",
+                      size: 11, color: hint(theme), onPanel: true).padding(.top, 4)
+            }
         }
+    }
+}
+
+/// Профиль: вход, регистрация, отметки сервисов на всех устройствах.
+struct ProfileSettings: View {
+    @EnvironmentObject var m: PlayerModel
+    @Environment(\.theme) private var theme
+    @ObservedObject private var p = ProfileStore.shared
+    @State private var register = false
+    @State private var email = ""
+    @State private var name = ""
+    @State private var password = ""
+    @State private var agree = false
+    @State private var server = ProfileStore.shared.ownServer
+
+    static let disclaimer = "Мы хотим заслужить твоё доверие, поэтому говорим прямо. Мы не используем твои данные против тебя и не продаём их, а храним надёжно. Пароли и вход в Spotify, Яндекс Музыку, VK и SoundCloud остаются только на твоём устройстве — мы их не получаем и не сохраняем. На сервере хранится лишь почта, имя, пароль от профиля в зашифрованном виде и отметка по каждому сервису: «есть активация» или «нет активации». Профиль и все данные можно удалить в любой момент одной кнопкой."
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if p.signedIn { signedIn } else { form }
+        }
+        .onAppear { Task { await p.refreshHere() } }
+    }
+
+    private var form: some View {
+        SettingsCard(title: "Профиль «Музыка в офлайн»", icon: "person.crop.circle.fill", badge: "profile") {
+            TText("Один профиль на всех устройствах: на телефоне и компьютере сразу видно, какие музыкальные сервисы у тебя уже подключены.",
+                  size: 12, color: hint(theme), onPanel: true).fixedSize(horizontal: false, vertical: true)
+            TSegmented(options: [(false, "Вход"), (true, "Регистрация")], value: $register)
+            TField(text: $email, placeholder: "Почта") { submit() }
+            if register { TField(text: $name, placeholder: "Имя (как к тебе обращаться)") { submit() } }
+            TField(text: $password, placeholder: register ? "Пароль — от 8 символов" : "Пароль", secure: true) { submit() }
+            if register {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "checkmark.shield.fill").font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Color(hex: theme.pixel ? 0x2E5616 : theme.accent))
+                    VStack(alignment: .leading, spacing: 4) {
+                        TText("Как мы храним данные", size: 13, title: true, onPanel: true)
+                        TText(Self.disclaimer, size: 11, onPanel: true).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(12)
+                .background { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: theme.panelText, alpha: 0.06)) }
+                Toggle(isOn: $agree) { TText("Я прочитал(а) и согласен(на)", size: 12, onPanel: true) }
+                    .toggleStyle(.checkbox)
+            }
+            if !p.error.isEmpty { TText(p.error, size: 12, color: 0xFF5A6A, onPanel: true) }
+            HStack(spacing: 10) {
+                TButton(p.busy ? "Подожди…" : register ? "Зарегистрироваться" : "Войти", icon: register ? "sparkles" : "person.fill", prominent: true) { submit() }
+                    .disabled(p.busy)
+                Spacer()
+            }
+            DisclosureGroup {
+                HStack(spacing: 8) {
+                    TField(text: $server, placeholder: "https://сайт.ru/muzyka/api.php") { p.ownServer = server }
+                    TButton("Сохранить", icon: "checkmark") { p.ownServer = server; m.announce(server.isEmpty ? "Буду брать адрес сервера из GitHub" : "Адрес сервера сохранён") }
+                }
+                .padding(.top, 6)
+            } label: {
+                TText("Свой сервер профилей", size: 11, color: hint(theme), onPanel: true)
+            }
+        }
+    }
+
+    private func submit() {
+        guard !p.busy else { return }
+        Task {
+            let ok = register ? await p.register(email: email, name: name, password: password, agree: agree)
+                              : await p.login(email: email, password: password)
+            if ok { password = ""; m.announce(register ? "Профиль создан ✓" : "Вход выполнен ✓") }
+        }
+    }
+
+    private var signedIn: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsCard(title: "Профиль", icon: "person.crop.circle.fill") {
+                HStack(spacing: 12) {
+                    let n = p.user?.name.isEmpty == false ? p.user!.name : (p.user?.email ?? "?")
+                    Text(String(n.prefix(1)).uppercased()).font(theme.title(22)).foregroundStyle(Color(hex: theme.onAccent))
+                        .frame(width: 52, height: 52)
+                        .background(Circle().fill(LinearGradient(colors: [Color(hex: theme.accent), Color(hex: theme.accent2)], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                    VStack(alignment: .leading, spacing: 3) {
+                        TText(p.user?.name.isEmpty == false ? p.user!.name : "Без имени", size: 16, title: true, onPanel: true)
+                        TText(p.user?.email ?? "", size: 12, color: hint(theme), onPanel: true)
+                    }
+                    Spacer()
+                }
+                TText(p.syncedAt.map { "Синхронизировано в " + $0.formatted(date: .omitted, time: .shortened) } ?? "Ещё не синхронизировано",
+                      size: 11, color: hint(theme), onPanel: true)
+                if !p.error.isEmpty { TText(p.error, size: 12, color: 0xFF5A6A, onPanel: true) }
+                HStack(spacing: 10) {
+                    TButton("Синхронизировать", icon: "arrow.triangle.2.circlepath", prominent: true) { Task { await p.sync(); m.announce(p.error.isEmpty ? "Синхронизировано" : p.error) } }
+                        .disabled(p.busy)
+                    TButton("Выйти", icon: "rectangle.portrait.and.arrow.right") { Task { await p.logout() } }
+                    Spacer()
+                }
+            }
+            SettingsCard(title: "Сервисы", icon: "music.note.list") {
+                VStack(spacing: 8) {
+                    ForEach(Platform.allCases) { pl in
+                        let st = p.status(pl)
+                        HStack(spacing: 10) {
+                            PlatformBadge(platform: pl, size: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                TText(pl.title, size: 13, onPanel: true)
+                                TText(st.text, size: 11, color: hint(theme), onPanel: true)
+                            }
+                            Spacer()
+                            TText(st.on ? "Есть активация" : "Нет активации", size: 11,
+                                  color: st.on ? (theme.pixel ? 0x2E5616 : 0x2FBF71) : hint(theme), onPanel: true)
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(Capsule().fill(st.on ? Color(hex: 0x2FBF71, alpha: 0.16) : Color(hex: theme.panelText, alpha: 0.08)))
+                            if p.here[pl] != true {
+                                TButton("Войти здесь", icon: "person.badge.key") { connect(pl) }
+                            }
+                        }
+                    }
+                }
+                TText("Отметка ставится сама, когда входишь в сервис. Сам вход в сервисы не переносится — только отметка, чтобы было видно, где ещё войти.",
+                      size: 11, color: hint(theme), onPanel: true).fixedSize(horizontal: false, vertical: true)
+            }
+            SettingsCard(title: "Данные", icon: "checkmark.shield.fill") {
+                TText(Self.disclaimer, size: 11, onPanel: true).fixedSize(horizontal: false, vertical: true)
+                HStack { TButton("Удалить профиль и данные", icon: "trash") { askDelete() }; Spacer() }
+            }
+        }
+    }
+
+    private func connect(_ pl: Platform) {
+        if let a = m.accounts.first(where: { $0.platform == pl }) { m.openAccount(a.id, login: true) } else { m.addAccount(pl) }
+    }
+
+    private func askDelete() {
+        let a = NSAlert()
+        a.messageText = "Удалить профиль?"
+        a.informativeText = "Профиль и все отметки на сервере удалятся. Введи пароль от профиля."
+        let f = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        a.accessoryView = f
+        a.addButton(withTitle: "Удалить")
+        a.addButton(withTitle: "Отмена")
+        guard a.runModal() == .alertFirstButtonReturn, !f.stringValue.isEmpty else { return }
+        let pw = f.stringValue
+        Task { if await p.remove(password: pw) { m.announce("Профиль и данные удалены") } }
     }
 }
 
@@ -824,7 +1070,6 @@ struct ThemeCard: View {
             .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(nsColor: .windowBackgroundColor).opacity(0.92)))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(selected ? Color(hex: t.accent) : Color.white.opacity(hover ? 0.4 : 0.12), lineWidth: selected ? 3 : 1.5))
-            .scaleEffect(hover ? 1.02 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -844,14 +1089,13 @@ struct BackgroundCard: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                SceneView(background: bg, preview: true, paused: !(hover || selected))
+                SceneView(background: bg, preview: true, paused: !hover)
                     .frame(height: 92)
                     .clipShape(RoundedRectangle(cornerRadius: theme.pixel ? 0 : 12, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: theme.pixel ? 0 : 12, style: .continuous)
                         .strokeBorder(selected ? Color(hex: theme.pixel ? 0x80FF20 : theme.accent) : .clear, lineWidth: 3))
                 TText(bg.title, size: 12, onPanel: true, align: .center).lineLimit(1)
             }
-            .scaleEffect(hover ? 1.03 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -1131,7 +1375,6 @@ struct PlatformTile: View {
                             .strokeBorder(Color(hex: p.color, alpha: hover ? 0.9 : 0.4), lineWidth: 1.5))
                 }
             }
-            .scaleEffect(hover ? 1.015 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -1184,6 +1427,8 @@ struct AccountBrowser: View {
     var body: some View {
         let a = m.account(session.accountID)
         VStack(spacing: 0) {
+            SiteTabsBar()
+                .padding(.horizontal, 10).padding(.top, 8)
             HStack(spacing: 8) {
                 PlatformBadge(platform: session.platform, size: 24)
                 TText("\(session.platform.title) · \(a?.name ?? "")", size: 14, title: true, onPanel: true).lineLimit(1)
@@ -1198,6 +1443,7 @@ struct AccountBrowser: View {
                 if session.needsLogin {
                     TButton("Войти", icon: "person.crop.circle") { session.goLogin() }
                 }
+                TIconButton("rectangle.compress.vertical", size: 30, tip: "Свернуть все окна площадок (музыка играет дальше)") { m.minimizeAllSites() }
                 TButton("К тексту", icon: "quote.bubble.fill", prominent: true) { m.closeBrowser() }
             }
             .padding(.horizontal, 12)
@@ -1217,6 +1463,67 @@ struct AccountBrowser: View {
         .opacity(open ? 1 : 0)
         .allowsHitTesting(open)
         .scaleEffect(open ? 1 : 0.98)
+    }
+}
+
+/// Вкладки площадок: все подключённые аккаунты, открытые — ярче; можно держать открытыми сразу несколько.
+struct SiteTabsBar: View {
+    @EnvironmentObject var m: PlayerModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(m.accounts) { a in SiteTabButton(a: a) }
+                TIconButton("plus", size: 28, tip: "Подключить ещё площадку") { m.modal = .addAccount }
+                NewBadge(feature: "tabs")
+            }
+            .padding(.vertical, 2)
+        }
+    }
+}
+
+struct SiteTabButton: View {
+    @EnvironmentObject var m: PlayerModel
+    @Environment(\.theme) private var theme
+    let a: Account
+    @State private var hover = false
+
+    var body: some View {
+        let open = m.openAccountID == a.id, loaded = m.isLoaded(a.id)
+        let playing = m.activeWebID == a.id && m.isPlaying
+        HStack(spacing: 7) {
+            PlatformBadge(platform: a.platform, size: 18)
+            TText(a.name, size: 12, onPanel: true).lineLimit(1).frame(maxWidth: 150, alignment: .leading)
+            if playing {
+                Image(systemName: "waveform").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: a.platform.color))
+            }
+            if loaded {
+                Button { m.unloadSession(a.id); if open { m.closeBrowser() } } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 18, height: 18)
+                        .background(Circle().fill(Color(hex: theme.panelText, alpha: hover ? 0.14 : 0)))
+                }
+                .buttonStyle(PressStyle())
+                .help("Закрыть вкладку (вход сохранится)")
+            }
+        }
+        .foregroundStyle(Color(hex: theme.panelText))
+        .padding(.leading, 10).padding(.trailing, loaded ? 5 : 10)
+        .frame(height: 30)
+        .background {
+            if theme.pixel {
+                BevelBox(fill: open ? 0xA8D58A : (hover ? 0xC9C9C9 : 0xB5B5B5), light: 0xE0E0E0, dark: 0x6F6F6F, border: nil)
+            } else {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color(hex: open ? a.platform.color : theme.panelText, alpha: open ? 0.22 : (hover ? 0.12 : 0.06)))
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(Color(hex: a.platform.color, alpha: open ? 0.8 : 0), lineWidth: 1.2))
+            }
+        }
+        .opacity(loaded || open ? 1 : 0.7)
+        .contentShape(Rectangle())
+        .onTapGesture { m.openAccount(a.id) }
+        .onHover { hover = $0 }
     }
 }
 
@@ -1249,10 +1556,6 @@ struct UpdatesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                SectionLabel(text: "Обновления")
-                NewBadge(feature: "updates")
-            }
             HStack(spacing: 12) {
                 Image(nsImage: AppLogo.image).resizable().frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 3) {

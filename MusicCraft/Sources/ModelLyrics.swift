@@ -34,6 +34,7 @@ extension PlayerModel {
         if key == nowPlaying?.key {
             status = "Текст: \(source)" + (l.synced ? "" : " (без тайминга, примерно)")
             lyricsOffline = false
+            lyricsMissing = false
         }
     }
 
@@ -60,7 +61,7 @@ extension PlayerModel {
             }
         }
         guard autoLyrics else {
-            if nowPlaying?.key == np.key { status = "Автопоиск текста выключен в настройках. Нажми «Найти текст»." }
+            if nowPlaying?.key == np.key { status = "Автопоиск текста выключен в настройках"; lyricsMissing = lyricsDB[np.key]?.lyrics == nil }
             return
         }
         await searchOnline(np, query: nil)
@@ -99,14 +100,15 @@ extension PlayerModel {
 
     private func searchOnline(_ np: NowPlaying, query: String?, attempt: Int = 0) async {
         let isCur = { self.nowPlaying?.key == np.key }
-        if isCur() { status = "Ищу текст…"; lyricsOffline = false }
+        if isCur() { status = "Ищу текст…"; lyricsOffline = false; lyricsMissing = false }
         do {
             let list = try await LyricsSearch.find(artist: np.artist, title: np.title, duration: np.duration, query: query)
             guard !list.isEmpty else {
                 if isCur() {
                     status = lyricsDB[np.key]?.lyrics == nil
-                        ? "Текст не найден ни в одной базе. Можно поискать вручную или вставить свой текст."
+                        ? "Текст этой песни не нашёлся"
                         : "Синхронный текст не найден, показываю текст из файла."
+                    lyricsMissing = lyricsDB[np.key]?.lyrics == nil
                 }
                 return
             }
@@ -131,7 +133,8 @@ extension PlayerModel {
                     await searchOnline(np, query: query, attempt: attempt + 1)
                 }
             } else {
-                status = "Нет связи с сервером текстов. Проверь интернет и нажми «Повторить»."
+                status = "Нет связи с сервером текстов"
+                lyricsMissing = lyricsDB[np.key]?.lyrics == nil
             }
         }
     }

@@ -130,6 +130,14 @@ final class Engine {
     private long lastSaved = 0;
     volatile Listener listener;
 
+    // 2.5: музыка сайта площадки во встроенном браузере — уведомление показывает её, кнопки идут странице
+    volatile boolean siteMode = false;
+    volatile boolean delegate = false;     // плейлист с треками площадок: «дальше/назад» решает страница
+    private String siteTitle = "", siteArtist = "", siteArtUrl = "";
+    private boolean sitePlaying = false;
+    private long sitePos = 0, siteDur = 0, siteAt = 0;
+    private Bitmap siteArt;
+
     private final BroadcastReceiver noisy = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) {
             if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(i.getAction())) pause();   // выдернули наушники
@@ -170,12 +178,12 @@ final class Engine {
 
         session = new MediaSession(c, "Muzyka");
         session.setCallback(new MediaSession.Callback() {
-            @Override public void onPlay() { play(); }
-            @Override public void onPause() { pause(); }
-            @Override public void onStop() { pause(); }
-            @Override public void onSkipToNext() { next(false); }
-            @Override public void onSkipToPrevious() { prev(); }
-            @Override public void onSeekTo(long pos) { seek(pos); }
+            @Override public void onPlay() { if (siteMode) siteCmd("play", 0); else play(); }
+            @Override public void onPause() { if (siteMode) siteCmd("pause", 0); else pause(); }
+            @Override public void onStop() { if (siteMode) siteCmd("pause", 0); else pause(); }
+            @Override public void onSkipToNext() { skip("next"); }
+            @Override public void onSkipToPrevious() { skip("prev"); }
+            @Override public void onSeekTo(long pos) { if (siteMode) siteCmd("seek", pos); else seek(pos); }
         }, main);
         session.setSessionActivity(openApp());
         restore();
@@ -185,6 +193,7 @@ final class Engine {
 
     void setQueue(String id, List<Item> items, int idx, boolean autoplay, long startMs) {
         if (items.isEmpty()) return;
+        siteMode = false;
         synchronized (queue) {
             queue.clear();
             queue.addAll(items);
@@ -222,11 +231,90 @@ final class Engine {
     }
 
     void handleAction(String a) {
-        if (ACT_PLAY.equals(a)) play();
-        else if (ACT_PAUSE.equals(a)) pause();
-        else if (ACT_NEXT.equals(a)) next(false);
-        else if (ACT_PREV.equals(a)) prev();
+        if (ACT_PLAY.equals(a)) { if (siteMode) siteCmd("play", 0); else play(); }
+        else if (ACT_PAUSE.equals(a)) { if (siteMode) siteCmd("pause", 0); else pause(); }
+        else if (ACT_NEXT.equals(a)) skip("next");
+        else if (ACT_PREV.equals(a)) skip("prev");
         else if (ACT_STOP.equals(a)) stopAll();
+    }
+
+    /** «Дальше/назад» из уведомления, экрана блокировки и наушников. */
+    private void skip(String action) {
+        if (siteMode) { siteCmd(action, 0); return; }
+        if (delegate && listener != null) { emit("control", "{\"action\":\"" + action + "\"}"); return; }
+        if ("next".equals(action)) next(false); else prev();
+    }
+
+    private void siteCmd(String action, long posMs) {
+        if ("play".equals(action) || "pause".equals(action)) {
+            sitePos = sitePosMs(); siteAt = SystemClock.elapsedRealtime();
+            sitePlaying = "play".equals(action);
+            publish();
+        }
+        emit("siteControl", "{\"action\":\"" + action + "\",\"pos\":" + (posMs / 1000.0) + "}");
+    }
+
+    /** Что играет на сайте (JSON от страницы) или пусто — сайт больше не главный. */
+    void setSite(String json) {
+        if (json == null || json.isEmpty()) {
+            if (!siteMode) return;
+            siteMode = false;
+            sitePlaying = false;
+            if (size() > 0 && (wants || notifShown)) { publish(); return; }
+            PlaybackService s = PlaybackService.running;
+            if (s != null) s.finish(); else nm.cancel(NOTIF_ID);
+            notifShown = false;
+            return;
+        }
+        try {
+            JSONObject o = new JSONObject(json);
+            siteMode = true;
+            siteTitle = o.optString("title");
+            siteArtist = o.optString("artist");
+            sitePlaying = o.optBoolean("playing");
+            sitePos = (long) (o.optDouble("pos", 0) * 1000);
+            siteDur = (long) (o.optDouble("dur", 0) * 1000);
+            siteAt = SystemClock.elapsedRealtime();
+            final String artUrl = o.optString("art");
+            if (!artUrl.equals(siteArtUrl)) {
+                siteArtUrl = artUrl;
+                siteArt = null;
+                if (artUrl.startsWith("https://")) {
+                    bg.execute(() -> {
+                        Bitmap b = download(artUrl);
+                        main.post(() -> { if (artUrl.equals(siteArtUrl)) { siteArt = b; publish(); } });
+                    });
+                }
+            }
+            publish();
+        } catch (Exception e) { Log.w(TAG, "site", e); }
+    }
+
+    private long sitePosMs() {
+        long p = sitePos + (sitePlaying ? SystemClock.elapsedRealtime() - siteAt : 0);
+        if (siteDur > 0) p = Math.min(p, siteDur);
+        return Math.max(0, p);
+    }
+
+    /** Звук играет или должен играть: свой файл или сайт. */
+    boolean active() { return siteMode ? sitePlaying : wants; }
+
+    private static Bitmap download(String url) {
+        java.net.HttpURLConnection c = null;
+        try {
+            c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(10000);
+            if (c.getResponseCode() != 200) return null;
+            try (java.io.InputStream in = c.getInputStream()) {
+                byte[] data = Files.readBytes(in, 4 << 20);
+                return data == null ? null : Media.decode(data, 512);
+            }
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (c != null) c.disconnect();
+        }
     }
 
     void play() {
@@ -287,6 +375,7 @@ final class Engine {
                 // очередь закончилась: встаём на начало и ждём
                 op = 0;
                 load(orderAt(0), false, 0);
+                emit("queueEnd", "{}");
                 return;
             }
         }
@@ -333,6 +422,8 @@ final class Engine {
 
     /** Смахнули уведомление на паузе: закрываем плеер, но очередь и место помним. */
     void stopAll() {
+        siteMode = false;
+        sitePlaying = false;
         persist(true);
         wants = false;
         playing = false;
@@ -625,6 +716,7 @@ final class Engine {
     // ---------- уведомление, экран блокировки, наушники ----------
 
     private void publish() {
+        if (siteMode) { publishSite(); return; }
         Item it = itemAt(index);
         if (it != null) {
             MediaMetadata.Builder m = new MediaMetadata.Builder()
@@ -661,6 +753,31 @@ final class Engine {
         emitState();
     }
 
+    private void publishSite() {
+        MediaMetadata.Builder m = new MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, siteTitle)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, siteArtist)
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, siteDur);
+        if (siteArt != null) m.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, siteArt);
+        session.setMetadata(m.build());
+        session.setPlaybackState(new PlaybackState.Builder()
+                .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
+                        | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
+                .setState(sitePlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, sitePosMs(), sitePlaying ? 1f : 0f, SystemClock.elapsedRealtime())
+                .build());
+        session.setActive(true);
+        Notification n = buildNotification();
+        PlaybackService s = PlaybackService.running;
+        if (sitePlaying) {
+            if (s != null) s.promote(n); else startService();
+            notifShown = true;
+        } else if (s != null) {
+            s.demote(n);
+        } else if (notifShown) {
+            nm.notify(NOTIF_ID, n);
+        }
+    }
+
     private void startService() {
         try {
             ctx.startForegroundService(new Intent(ctx, PlaybackService.class));
@@ -673,8 +790,10 @@ final class Engine {
 
     Notification buildNotification() {
         Item it = itemAt(index);
-        String title = it != null ? it.title : ctx.getString(R.string.app_name);
-        String artist = it != null ? it.artist : "";
+        boolean on = siteMode ? sitePlaying : wants;
+        String title = siteMode ? siteTitle : it != null ? it.title : ctx.getString(R.string.app_name);
+        String artist = siteMode ? siteArtist : it != null ? it.artist : "";
+        Bitmap big = siteMode ? siteArt : art;
         Notification.Builder b = new Notification.Builder(ctx, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notif)
                 .setContentTitle(title)
@@ -682,18 +801,18 @@ final class Engine {
                 .setContentIntent(openApp())
                 .setDeleteIntent(PendingIntent.getBroadcast(ctx, 9, new Intent(ctx, Controls.class).setAction(ACT_STOP),
                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
-                .setOngoing(wants)
+                .setOngoing(on)
                 .setShowWhen(false)
                 .setOnlyAlertOnce(true)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setCategory(Notification.CATEGORY_TRANSPORT)
                 .addAction(action(R.drawable.ic_prev, "Назад", ACT_PREV, 1))
-                .addAction(wants ? action(R.drawable.ic_pause, "Пауза", ACT_PAUSE, 2) : action(R.drawable.ic_play, "Играть", ACT_PLAY, 3))
+                .addAction(on ? action(R.drawable.ic_pause, "Пауза", ACT_PAUSE, 2) : action(R.drawable.ic_play, "Играть", ACT_PLAY, 3))
                 .addAction(action(R.drawable.ic_next, "Дальше", ACT_NEXT, 4))
                 .setStyle(new Notification.MediaStyle()
                         .setMediaSession(session.getSessionToken())
                         .setShowActionsInCompactView(0, 1, 2));
-        if (art != null) b.setLargeIcon(art);
+        if (big != null) b.setLargeIcon(big);
         if (Build.VERSION.SDK_INT >= 31) b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
         return b.build();
     }

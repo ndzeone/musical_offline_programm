@@ -1,0 +1,6 @@
+# Apache: передаём заголовок входа в PHP и закрываем служебные файлы
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+<FilesMatch "^(config\.php|config\.example\.php|schema\.sql|README\.md)$">
+  Require all denied
+</FilesMatch>
+Options -Indexes

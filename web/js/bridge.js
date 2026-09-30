@@ -44,9 +44,10 @@
   // ---------- проверочный режим (браузер на Mac): всё в памяти ----------
   var mem = {};
   var mock = {
-    http: function (url) {
-      if (window.__mockHttp) return Promise.resolve(window.__mockHttp(url));
-      return fetch(url).then(function (r) { return r.text().then(function (t) { return { status: r.status, body: t }; }); })
+    http: function (url, headers, method, body) {
+      if (window.__mockHttp) return Promise.resolve(window.__mockHttp(url, method || 'GET', body));
+      return fetch(url, { method: method || 'GET', headers: headers || {}, body: body || undefined })
+        .then(function (r) { return r.text().then(function (t) { return { status: r.status, body: t }; }); })
         .catch(function () { return { status: 0, body: '' }; });
     },
     readFile: function (n) { return Promise.resolve(mem[n] || (window.localStorage ? localStorage.getItem('f:' + n) : null)); },
@@ -57,15 +58,21 @@
     kind: kind,
     on: function (name, f) { (listeners[name] = listeners[name] || []).push(f); },
     version: function () {
-      if (A) return sync('version', [], '2.4.0');
+      if (A) return sync('version', [], '2.5.0');
       if (E && E.version) return E.version;
-      return window.__mockVersion || '2.4.0';
+      return window.__mockVersion || '2.5.0';
     },
     http: function (url, headers) {
       var h = JSON.stringify(headers || {});
       if (A) return acall('http', [url, h]).then(function (r) { return r || { status: 0, body: '' }; });
       if (E) return E.http(url, headers || {});
       return mock.http(url, headers);
+    },
+    // Запрос с телом (профиль на сервере): method — POST/GET, body — строка JSON
+    request: function (url, method, headers, body) {
+      if (A) return acall('request', [url, method || 'GET', JSON.stringify(headers || {}), body || '']).then(function (r) { return r || { status: 0, body: '' }; });
+      if (E && E.request) return E.request(url, method || 'GET', headers || {}, body || '');
+      return mock.http(url, headers, method, body);
     },
     readFile: function (name) {
       if (A) return Promise.resolve(sync('readFile', [name], null));
@@ -136,24 +143,72 @@
       if (E && E.installUpdate) { E.installUpdate(url, name); return true; }
       return false;
     },
-    // Браузер внутри программы: страница площадки поверх интерфейса в прямоугольнике rect
-    hasBrowser: function () { return !!(A || (E && E.browserOpen)); },
-    browserOpen: function (url, rect) {
-      var r = JSON.stringify(rect || {});
-      if (A) return sync('browserOpen', [url, r]);
-      if (E && E.browserOpen) return E.browserOpen(url, rect);
+    // 2.5: сайты площадок во вкладках внутри программы. Каждая вкладка — отдельная страница, вход общий.
+    // Скрытые вкладки живут дальше (музыка на них не прерывается).
+    hasBrowser: function () { return !!(A || (E && E.siteOpen)); },
+    siteOpen: function (tab, url, rect, show) {
+      if (A) return sync('siteOpen', [tab, url, JSON.stringify(rect || {}), show !== false]);
+      if (E && E.siteOpen) return E.siteOpen(tab, url, rect || {}, show !== false);
     },
-    browserBounds: function (rect) {
-      if (A) return sync('browserBounds', [JSON.stringify(rect)]);
-      if (E && E.browserBounds) return E.browserBounds(rect);
+    siteShow: function (tab, rect) {
+      if (A) return sync('siteShow', [tab, JSON.stringify(rect || {})]);
+      if (E && E.siteShow) return E.siteShow(tab, rect || {});
     },
-    browserNav: function (action) {
-      if (A) return sync('browserNav', [action]);
-      if (E && E.browserNav) return E.browserNav(action);
+    siteHide: function () {
+      if (A) return sync('siteHide', []);
+      if (E && E.siteHide) return E.siteHide();
     },
-    browserClose: function () {
-      if (A) return sync('browserClose', []);
-      if (E && E.browserClose) return E.browserClose();
+    siteClose: function (tab) {
+      if (A) return sync('siteClose', [tab]);
+      if (E && E.siteClose) return E.siteClose(tab);
+    },
+    siteBounds: function (rect) {
+      if (A) return sync('siteBounds', [JSON.stringify(rect)]);
+      if (E && E.siteBounds) return E.siteBounds(rect);
+    },
+    siteNav: function (tab, action) {
+      if (A) return sync('siteNav', [tab, action]);
+      if (E && E.siteNav) return E.siteNav(tab, action);
+    },
+    siteLoad: function (tab, url) {
+      if (A) return sync('siteLoad', [tab, url]);
+      if (E && E.siteLoad) return E.siteLoad(tab, url);
+    },
+    // Выполнить скрипт на странице вкладки; ответ — строка (или null)
+    siteEval: function (tab, js) {
+      if (A) return acall('siteEval', [tab, js]).then(function (r) { return r == null ? null : r; });
+      if (E && E.siteEval) return E.siteEval(tab, js);
+      return Promise.resolve(null);
+    },
+    // Настоящее нажатие в точку страницы (x, y — в точках страницы размером vw×vh)
+    sitePress: function (tab, x, y, vw, vh) {
+      if (A) return sync('sitePress', [tab, +x, +y, +vw, +vh]);
+      if (E && E.sitePress) return E.sitePress(tab, x, y, vw, vh);
+    },
+    // Вход в аккаунты: { spotify: true, yandex: false, … } по cookie, которые появляются только после входа
+    siteLogins: function () {
+      if (A) return Promise.resolve(json(sync('siteLogins', [], '{}'), {}));
+      if (E && E.siteLogins) return E.siteLogins();
+      return Promise.resolve(window.__mockLogins || {});
+    },
+    siteLogout: function (platform) {
+      if (A) return Promise.resolve(sync('siteLogout', [platform], false));
+      if (E && E.siteLogout) return E.siteLogout(platform);
+      return Promise.resolve(true);
+    },
+    // Android: уведомление и экран блокировки показывают трек с сайта, музыка не засыпает в фоне
+    siteMirror: function (st) { if (A) sync('siteMirror', [st ? JSON.stringify(st) : '']); },
+    // Android: «дальше/назад» из уведомления отдаём странице (плейлист с треками площадок)
+    delegateSkips: function (on) { if (A) sync('delegateSkips', [!!on]); },
+    // Вся музыка на устройстве (Android — вся память телефона, Windows — все диски)
+    deepScan: function () {
+      if (A) return acall('deepScan', []).then(function (r) { return r || { ok: false, tracks: [] }; });
+      if (E && E.deepScan) return E.deepScan();
+      return Promise.resolve({ ok: true, tracks: window.__mockTracks || [], stats: { found: 0, fresh: 0, missing: 0 } });
+    },
+    filesExist: function (paths) {
+      if (E && E.filesExist) return E.filesExist(paths);
+      return Promise.resolve(paths.map(function () { return true; }));
     },
     keepScreenOn: function (on) { if (A) sync('keepScreenOn', [!!on]); },
     systemBars: function (lightIcons) { if (A) sync('systemBars', [!!lightIcons]); },

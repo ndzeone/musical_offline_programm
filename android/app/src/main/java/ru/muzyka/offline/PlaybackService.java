@@ -25,11 +25,11 @@ public class PlaybackService extends Service {
         promote(e.buildNotification());
         String a = intent != null ? intent.getAction() : null;
         if (a != null) e.handleAction(a);
-        if (Engine.ACT_STOP.equals(a) || !e.hasQueue()) {
+        if (Engine.ACT_STOP.equals(a) || (!e.hasQueue() && !e.siteMode)) {
             finish();
             return START_NOT_STICKY;
         }
-        if (!e.wants) demote(e.buildNotification());
+        if (!e.active()) demote(e.buildNotification());
         return START_NOT_STICKY;
     }
 
@@ -64,7 +64,7 @@ public class PlaybackService extends Service {
         // Приложение смахнули из недавних: если музыка играет — пусть играет, иначе закрываемся
         Engine e = Engine.get(this);
         e.persistNow();
-        if (!e.wants) e.stopAll();
+        if (!e.active()) e.stopAll();
         super.onTaskRemoved(rootIntent);
     }
 

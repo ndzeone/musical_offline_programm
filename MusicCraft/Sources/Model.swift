@@ -92,6 +92,11 @@ final class PlayerModel: ObservableObject {
     @Published var status = ""
     @Published var searchQuery = ""
     @Published var lyricsOffline = false
+    /// Текст этой песни точно не нашёлся (показываем пластинку посередине)
+    @Published var lyricsMissing = false
+    /// Поиск всей музыки на Mac
+    @Published var scanning = false
+    @Published var scanResult: ScanResult?
 
     // Навигация
     @Published var page: Page = .stage
@@ -227,8 +232,9 @@ final class PlayerModel: ObservableObject {
         restoreSession()
         verifyArtOnce()
         startUpdateChecks()
+        ProfileStore.shared.start()
         let st = Timer(timeInterval: 10, repeats: true) { _ in
-            MainActor.assumeIsolated { let m = PlayerModel.shared; if m.isPlaying { m.saveSession() } }
+            MainActor.assumeIsolated { let m = PlayerModel.shared; if m.isPlaying { m.saveSession() }; m.checkWebExpect() }
         }
         st.tolerance = 2
         RunLoop.main.add(st, forMode: .common)
@@ -368,6 +374,12 @@ final class PlayerModel: ObservableObject {
         if let x = d.object(forKey: "bassPulse") as? Bool { v.bassPulse = x }
         if let x = d.object(forKey: "vinylSpin") as? Bool { v.vinylSpin = x }
         if let x = d.object(forKey: "particles") as? Bool { v.particles = x }
+        if let x = d.object(forKey: "idleSlow") as? Bool { v.idleSlow = x }
+        if let x = d.object(forKey: "bgQuality") as? Double { v.quality = x }
+        // 2.5: режимы «Баланс» и «Красота» раньше рисовали фон в полном разрешении — переводим на новые наборы
+        if d.object(forKey: "bgQuality") == nil, let mode = PerfMode.allCases.first(where: { var p = $0.preset; p.idleSlow = v.idleSlow; p.quality = v.quality; return p == v }) {
+            v = mode.preset
+        }
         return v
     }
 
@@ -381,6 +393,8 @@ final class PlayerModel: ObservableObject {
         d.set(v.bassPulse, forKey: "bassPulse")
         d.set(v.vinylSpin, forKey: "vinylSpin")
         d.set(v.particles, forKey: "particles")
+        d.set(v.idleSlow, forKey: "idleSlow")
+        d.set(v.quality, forKey: "bgQuality")
     }
 
     var perfMode: PerfMode? { PerfMode.allCases.first { $0.preset == visual } }
@@ -833,6 +847,7 @@ final class PlayerModel: ObservableObject {
         if keyChanged {
             status = ""
             lyricsOffline = false
+            lyricsMissing = false
             Task {
                 // Для файла сначала дочитываем теги, чтобы объявить настоящее название
                 if case .local(let id) = np.origin { await loadMeta(id) }

@@ -27,7 +27,7 @@ for i in $(seq 1 60); do
   sleep 2
 done
 adb shell content query --uri content://media/external/audio/media --projection title:artist:is_music:duration || true
-node ci/android_e2e.mjs "$DEBUG_APK" "$OUT"
+node ci/android_e2e.mjs "$DEBUG_APK" "$OUT" "$MUSIC/hidden/track4.mp3"
 RES=$?
 # Обычная сборка: ставится и запускается
 adb install -r -g "$RELEASE_APK" && adb shell am start -W -n ru.muzyka.offline/.MainActivity

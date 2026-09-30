@@ -4,7 +4,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [apk, out] = process.argv.slice(2);
+const [apk, out, hidden] = process.argv.slice(2);
 const PKG = 'ru.muzyka.offline.debug';
 fs.mkdirSync(out, { recursive: true });
 const report = [];
@@ -57,6 +57,19 @@ function ourSession() {
   const i = d.indexOf('package=' + PKG);
   if (i < 0) return '';
   return d.slice(Math.max(0, d.lastIndexOf('\n', i - 400)), i + 1500);
+}
+
+// Маленькая страница «площадки» со звуком: проверяем помощник, «сейчас играет», уведомление
+function testSiteURL() {
+  const rate = 8000, n = rate * 20, buf = Buffer.alloc(44 + n);
+  buf.write('RIFF', 0); buf.writeUInt32LE(36 + n, 4); buf.write('WAVE', 8); buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22); buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate, 28); buf.writeUInt16LE(1, 32); buf.writeUInt16LE(8, 34); buf.write('data', 36); buf.writeUInt32LE(n, 40);
+  for (let i = 0; i < n; i++) buf[44 + i] = 128 + Math.round(Math.sin(i / rate * 2 * Math.PI * 330) * 20);
+  const page = '<!doctype html><meta name="viewport" content="width=device-width"><title>Тестовая площадка</title><body style="font:20px sans-serif;padding:20px">' +
+    '<h1>Тестовая площадка</h1><audio id="a" controls loop src="data:audio/wav;base64,' + buf.toString('base64') + '"></audio>' +
+    '<script>try{navigator.mediaSession.metadata=new MediaMetadata({title:"Тестовая песня",artist:"Проверка CI"})}catch(e){}</script>';
+  return 'data:text/html;charset=utf-8;base64,' + Buffer.from(page).toString('base64');
 }
 
 // ---------- сценарий ----------
@@ -139,8 +152,28 @@ async function main() {
   check('continues from the same place', cont.playing && cont.index === 1 && cont.pos > 12, JSON.stringify(cont));
   await js('UI.A.toggle(); true');
 
+  // 2.5: переключатели и кнопки не сбрасывают прокрутку наверх
+  await js("UI.A.perf('balanced'); UI.A.setTab('look'); true"); await sleep(1500);
+  await js("document.querySelector('#screen .scroll').scrollTop = 420; true"); await sleep(400);
+  const sc0 = await js("document.querySelector('#screen .scroll').scrollTop");
+  await js("document.querySelector('[data-a=sw][data-x=glass]').click(); true"); await sleep(700);
+  const sc1 = await js("document.querySelector('#screen .scroll').scrollTop");
+  await js("document.querySelector('[data-a=sw][data-x=glass]').click(); true"); await sleep(500);
+  await js("document.querySelector('#mini [data-a=toggle]').click(); true"); await sleep(1500);
+  const sc2 = await js("document.querySelector('#screen .scroll').scrollTop");
+  await js("document.querySelector('#mini [data-a=toggle]').click(); true"); await sleep(800);
+  check('switches and play/pause keep the scroll position', sc0 > 200 && Math.abs(sc1 - sc0) < 5 && Math.abs(sc2 - sc0) < 5, `before=${sc0} switch=${sc1} play=${sc2}`);
+  check('60 frames by default', await js('Store.settings.fps === 60 && UI.S.scene.fps === 60'), 'measured ' + await js('UI.S.scene.measured') + ' fps on the emulator');
+
+  // 2.5: у песни нет текста — посередине пластинка с обложкой на наклейке
+  await js("UI.A.tab('np'); true");
+  let vin = false;
+  for (let i = 0; i < 40 && !vin; i++) { await sleep(2000); vin = await js("!!document.querySelector('#np.nolyr .bigvinyl .lbl img')"); }
+  check('no lyrics → vinyl with the cover in the middle', vin, await js("UI.S.lyr[Player.now().key] && UI.S.lyr[Player.now().key].status"));
+  shot('06b_no_lyrics_vinyl');
+
   // Экраны
-  await js("UI.A.perf('balanced'); UI.A.libDevice(); UI.A.libSeg('fav'); true"); await sleep(1500); shot('06_favorites');
+  await js("UI.A.libDevice(); UI.A.libSeg('fav'); true"); await sleep(1500); shot('06_favorites');
   await js("UI.A.tab('set'); true"); await sleep(1500); shot('07_settings');
   await js("UI.A.tab('apps'); true"); await sleep(1500); shot('08_apps');
   await js("UI.A.theme('kitty'); UI.A.tab('np'); true"); await sleep(5000);
@@ -163,6 +196,37 @@ async function main() {
   await js('window.__back(); true'); await sleep(1500);
   const br2 = JSON.parse(await js('JSON.stringify(window.__brState())'));
   check('back closes the in-app browser', !br2.open, JSON.stringify(br2));
+
+  // 2.5: музыка на сайте площадки — «сейчас играет», уведомление, управление из программы
+  await js(`Sites.openURL(${JSON.stringify(testSiteURL())}); true`); await sleep(5000);
+  const agent = await js(`NB.siteEval(Sites.active, 'typeof window.__mc + "/" + typeof window.MuzykaSite')`);
+  check('site helper runs on the page', agent === 'object/object', String(agent));
+  await js(`NB.siteEval(Sites.active, 'document.getElementById("a").play(); "ok"')`);
+  let sn = null;
+  for (let i = 0; i < 10; i++) { await sleep(1000); sn = JSON.parse(await js('JSON.stringify(Player.now())')); if (sn && sn.kind === 'site') break; }
+  check('music on a site becomes «now playing»', sn && sn.kind === 'site' && sn.title === 'Тестовая песня' && sn.artist === 'Проверка CI', JSON.stringify(sn));
+  shot('16_site');
+  await sleep(1500);
+  check('lock screen / notification shows the site track', /Тестовая песня/.test(ourSession()), ourSession().slice(0, 400).replace(/\s+/g, ' '));
+  await js('UI.A.minimizeAll(); true'); await sleep(1500);
+  const mini = JSON.parse(await js('JSON.stringify({open: Sites.open, tabs: Sites.tabs.length, playing: Player.isPlaying(), kind: Player.now() && Player.now().kind})'));
+  check('«minimize all» hides the pages, music keeps playing', !mini.open && mini.tabs >= 2 && mini.playing && mini.kind === 'site', JSON.stringify(mini));
+  await js("UI.A.tab('np'); true"); await sleep(2500); shot('17_np_site');
+  await js('UI.A.toggle(); true'); await sleep(1500);
+  const pz = await js(`NB.siteEval(Sites.current, 'String(document.getElementById("a").paused)')`);
+  check('play/pause in the app controls the site', pz === 'true', String(pz));
+  await js("UI.A.tab('apps'); true"); await sleep(1500); shot('18_apps_tabs');
+
+  // 2.5: вся музыка телефона — файл в любой папке, которого медиатека ещё не видела
+  if (hidden && fs.existsSync(hidden)) {
+    adb('shell mkdir -p "/sdcard/Documents/Глубокая папка"');
+    adb(`push ${hidden} "/sdcard/Documents/Глубокая папка/track4.mp3"`);
+  }
+  const ds = JSON.parse(await js("NB.deepScan().then(function (r) { return JSON.stringify({ ok: r.ok, n: (r.tracks || []).length, titles: (r.tracks || []).map(function (t) { return t.title; }), stats: r.stats }); })"));
+  check('deep scan finds music in any folder', ds.ok && ds.titles.some((t) => /Спрятанный/.test(t)), JSON.stringify(ds));
+  await js("UI.A.deepScan(); true"); await sleep(8000); shot('19_deep_scan');
+  await js("UI.A.closeModal(); UI.A.setTab('profile'); UI.A.authMode('register'); true"); await sleep(1500); shot('20_profile');
+  await js("UI.A.setTab('perf'); true"); await sleep(1500); shot('21_perf');
 
   // 2.4: обновления с GitHub (как будто стоит старая версия) → загрузка → установка Android
   let upd = null;

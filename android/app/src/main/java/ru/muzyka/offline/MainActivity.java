@@ -53,8 +53,6 @@ public class MainActivity extends Activity implements Engine.Listener {
 
     FrameLayout root;
     WebView web;
-    WebView browser;                 // сайты площадок внутри программы
-    private int browserProgress = 0;
     volatile String insetsJson = "";
     private final ExecutorService io = Executors.newFixedThreadPool(2);
     private String pendingScan, pendingExport, pendingImport, exportPayload;
@@ -264,11 +262,7 @@ public class MainActivity extends Activity implements Engine.Listener {
     @Override protected void onDestroy() {
         Engine e = Engine.get(this);
         if (e.listener == this) e.listener = null;
-        if (browser != null) {
-            root.removeView(browser);
-            browser.destroy();
-            browser = null;
-        }
+        if (sites != null) sites.destroy();
         if (web != null) {
             root.removeView(web);
             web.destroy();
@@ -297,6 +291,15 @@ public class MainActivity extends Activity implements Engine.Listener {
             pendingScan = id;
             requestPermissions(new String[]{audioPermission()}, REQ_AUDIO);
         });
+    }
+
+    /** Вся музыка телефона: память и карты, любые папки; то, что Android ещё не видит, — добавляем в медиатеку. */
+    void deepScan(String id) {
+        if (checkSelfPermission(audioPermission()) != PackageManager.PERMISSION_GRANTED) {
+            reply(id, "{\"ok\":false,\"denied\":true,\"tracks\":[]}");
+            return;
+        }
+        io.execute(() -> reply(id, Media.deepScan(this)));
     }
 
     @Override public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
@@ -380,139 +383,14 @@ public class MainActivity extends Activity implements Engine.Listener {
         }
     }
 
-    // ---------- браузер внутри программы ----------
+    // ---------- сайты площадок во вкладках (SiteTabs) ----------
 
-    @SuppressWarnings("deprecation")
-    private void createBrowser() {
-        browser = new WebView(this);
-        browser.setBackgroundColor(Color.WHITE);
-        WebSettings s = browser.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setDatabaseEnabled(true);
-        s.setUseWideViewPort(true);
-        s.setLoadWithOverviewMode(true);
-        s.setSupportZoom(true);
-        s.setBuiltInZoomControls(true);
-        s.setDisplayZoomControls(false);
-        s.setSupportMultipleWindows(false);
-        // сайты не должны думать, что это «урезанный» встроенный браузер
-        s.setUserAgentString(s.getUserAgentString().replace("; wv)", ")"));
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(browser, true);
-        browser.setWebViewClient(new WebViewClient() {
-            @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
-                String u = r.getUrl().toString();
-                if (u.startsWith("http://") || u.startsWith("https://")) return false;
-                openScheme(u);
-                return true;
-            }
-            @Override public void onPageStarted(WebView v, String url, android.graphics.Bitmap icon) { browserEvent(true); }
-            @Override public void onPageFinished(WebView v, String url) { browserEvent(false); }
-            @Override public void doUpdateVisitedHistory(WebView v, String url, boolean reload) { browserEvent(null); }
-            @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail d) {
-                if (v == browser) {
-                    root.removeView(browser);
-                    browser.destroy();
-                    browser = null;
-                    js("window.__nbEvent && window.__nbEvent('browser', {closed: true})");
-                }
-                return true;
-            }
-        });
-        browser.setWebChromeClient(new WebChromeClient() {
-            @Override public void onReceivedTitle(WebView v, String title) { browserEvent(null); }
-            @Override public void onProgressChanged(WebView v, int p) {
-                if (Math.abs(p - browserProgress) >= 10 || p == 100) { browserProgress = p; browserEvent(p < 100 ? Boolean.TRUE : null); }
-            }
-            @Override public void onPermissionRequest(PermissionRequest req) {
-                // защищённая музыка (как в Spotify) — можно; камера и микрофон — нет
-                for (String res : req.getResources()) {
-                    if (!PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID.equals(res)) { req.deny(); return; }
-                }
-                req.grant(req.getResources());
-            }
-        });
-        browser.setDownloadListener((url, ua, cd, mime, len) -> openExternal(url));
-        root.addView(browser, new FrameLayout.LayoutParams(1, 1));
+    SiteTabs sites;
+
+    SiteTabs sites() {
+        if (sites == null) sites = new SiteTabs(this);
+        return sites;
     }
-
-    /** Ссылки вида spotify:, vk:, intent:// — в приложения. */
-    private void openScheme(String u) {
-        try {
-            if (u.startsWith("intent:")) {
-                Intent i = Intent.parseUri(u, Intent.URI_INTENT_SCHEME);
-                try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return; } catch (Exception e) {
-                    String fb = i.getStringExtra("browser_fallback_url");
-                    if (fb != null && browser != null) browser.loadUrl(fb);
-                    return;
-                }
-            }
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        } catch (Exception ignored) { }
-    }
-
-    private void browserEvent(Boolean loading) {
-        WebView b = browser;
-        if (b == null) return;
-        try {
-            JSONObject o = new JSONObject();
-            o.put("url", b.getUrl() == null ? "" : b.getUrl());
-            o.put("title", b.getTitle() == null ? "" : b.getTitle());
-            o.put("canBack", b.canGoBack());
-            o.put("canFwd", b.canGoForward());
-            if (loading != null) o.put("loading", loading.booleanValue());
-            o.put("progress", browserProgress / 100.0);
-            js("window.__nbEvent && window.__nbEvent('browser'," + q(o.toString()) + ")");
-        } catch (Exception ignored) { }
-    }
-
-    /** Прямоугольник из страницы (в её точках) → место браузера на экране. */
-    private void placeBrowser(String rectJson) {
-        if (browser == null || web == null) return;
-        try {
-            JSONObject r = new JSONObject(rectJson);
-            double vw = r.optDouble("vw", 0);
-            double k = vw > 0 ? web.getWidth() / vw : getResources().getDisplayMetrics().density;
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams((int) Math.round(r.optDouble("w") * k), (int) Math.round(r.optDouble("h") * k));
-            lp.leftMargin = (int) Math.round(r.optDouble("x") * k);
-            lp.topMargin = (int) Math.round(r.optDouble("y") * k);
-            browser.setLayoutParams(lp);
-        } catch (Exception ignored) { }
-    }
-
-    void browserOpen(String url, String rect) {
-        runOnUiThread(() -> {
-            if (browser == null) createBrowser();
-            placeBrowser(rect);
-            browser.setVisibility(View.VISIBLE);
-            browser.bringToFront();
-            // тот же сайт уже открыт — показываем как есть (музыка и вход сохраняются)
-            boolean same = browser.getUrl() != null && url.equals(lastBrowserStart);
-            if (!same) browser.loadUrl(url);
-            lastBrowserStart = url;
-            browserEvent(null);
-        });
-    }
-    private String lastBrowserStart = "";
-
-    void browserBounds(String rect) { runOnUiThread(() -> placeBrowser(rect)); }
-
-    void browserNav(String action) {
-        runOnUiThread(() -> {
-            if (browser == null) return;
-            switch (action == null ? "" : action) {
-                case "back": if (browser.canGoBack()) browser.goBack(); break;
-                case "forward": if (browser.canGoForward()) browser.goForward(); break;
-                case "reload": browser.reload(); break;
-                case "stop": browser.stopLoading(); break;
-                default: break;
-            }
-        });
-    }
-
-    /** Закрыть — спрятать: страница остаётся (если на сайте играет музыка, она не прервётся). */
-    void browserClose() { runOnUiThread(() -> { if (browser != null) browser.setVisibility(View.GONE); }); }
 
     // ---------- обновление из выпуска на GitHub ----------
 

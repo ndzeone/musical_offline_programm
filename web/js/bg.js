@@ -443,19 +443,27 @@
   function Scene(canvas, opts) {
     this.canvas = canvas; this.ctx = canvas.getContext('2d', { alpha: false });
     this.opts = opts || {}; this.renderers = {}; this.id = 'minecraft';
-    this.fps = 30; this.dpr = 1; this.last = 0; this.lastDraw = 0; this.running = false;
+    this.fps = 60; this.dpr = 1; this.quality = 1; this.idleFps = 0; this.still = false;
+    this.last = 0; this.lastDraw = 0; this.running = false; this.dirty = true;
     this.bass = 0; this.level = 0; this.avg = 0; this.lastBeat = 0;
+    this.frames = 0; this.fpsAt = 0; this.measured = 0;
   }
   Scene.prototype.renderer = function (id) {
     if (!this.renderers[id]) this.renderers[id] = new (MAKERS[id] || Minecraft)();
     return this.renderers[id];
   };
+  // Разрешение фона: quality 0.5…1 от плотности экрана (не больше 2). Фон мягкий, лишние точки ему не нужны.
+  Scene.prototype.ratio = function () {
+    if (this.dpr !== 1 && this.quality === 1) return Math.min(window.devicePixelRatio || 1, this.dpr);   // превью в настройках
+    var r = Math.min(window.devicePixelRatio || 1, 2) * this.quality;
+    return Math.max(this.quality >= 0.75 ? 1 : 0.5, Math.round(r * 4) / 4);
+  };
   Scene.prototype.resize = function () {
     var w = this.canvas.clientWidth || this.canvas.width, h = this.canvas.clientHeight || this.canvas.height;
-    var d = Math.min(window.devicePixelRatio || 1, this.dpr);
+    var d = this.ratio();
     var cw = Math.max(1, Math.round(w * d)), ch = Math.max(1, Math.round(h * d));
     if (this.canvas.width !== cw || this.canvas.height !== ch) { this.canvas.width = cw; this.canvas.height = ch; }
-    this.scale = d; this.W = w; this.H = h;
+    this.scale = cw / Math.max(1, w); this.W = w; this.H = h;
   };
   Scene.prototype.frame = function (now) {
     var t = now / 1000, dt = this.last ? Math.min(0.1, Math.max(0, t - this.last)) : 1 / 60;
@@ -482,21 +490,36 @@
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
     this.renderer(this.id).draw(ctx, this.W, this.H, f);
   };
+  // Ровный шаг кадров: рисуем по сетке 1000/fps мс, не накапливая сдвиг (иначе 60 превращаются в 40–50).
+  // fps 0 — как у экрана. На паузе (idleFps) фон рисуется реже, «неподвижный» фон — один раз.
   Scene.prototype.loop = function (now) {
     if (!this.running) return;
     var self = this;
     requestAnimationFrame(function (n) { self.loop(n); });
-    if (now - this.lastDraw < 1000 / this.fps - 2) return;
-    this.lastDraw = now;
+    var fps = this.fps;
+    if (this.idleFps && this.opts.idle && this.opts.idle()) fps = fps ? Math.min(fps, this.idleFps) : this.idleFps;
+    if (this.still) { if (!this.dirty) return; this.dirty = false; }
+    else if (fps > 0) {
+      var step = 1000 / fps, el = now - this.lastDraw;
+      if (el < step - 1.5) return;
+      this.lastDraw = el > step * 3 ? now : this.lastDraw + step * Math.max(1, Math.floor((el + 1.5) / step));
+    } else this.lastDraw = now;
     this.frame(now);
+    this.frames++;
+    if (now - this.fpsAt >= 1000) {
+      this.measured = Math.round(this.frames * 1000 / (now - this.fpsAt));
+      this.frames = 0; this.fpsAt = now;
+      if (this.onFps) this.onFps(this.measured);
+    }
   };
   Scene.prototype.start = function () {
     if (this.running) return;
-    this.running = true; this.last = 0;
+    this.running = true; this.last = 0; this.dirty = true; this.frames = 0; this.fpsAt = performance.now();
     var self = this;
-    requestAnimationFrame(function (n) { self.loop(n); });
+    requestAnimationFrame(function (n) { self.lastDraw = n; self.loop(n); });
   };
   Scene.prototype.stop = function () { this.running = false; };
+  Scene.prototype.redraw = function () { this.dirty = true; };
   Scene.prototype.once = function () { this.frame(performance.now()); };
 
   window.BGScene = Scene;

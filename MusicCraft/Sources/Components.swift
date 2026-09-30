@@ -110,8 +110,7 @@ struct BevelBox: View {
 struct PressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .offset(y: configuration.isPressed ? 1 : 0)
-            .opacity(configuration.isPressed ? 0.9 : 1)
+            .opacity(configuration.isPressed ? 0.82 : 1)
     }
 }
 
@@ -322,7 +321,6 @@ struct TButton: View {
                     .strokeBorder(Color(hex: theme.border, alpha: prominent ? 0 : 0.45), lineWidth: 1.2))
                 .contentShape(RoundedRectangle(cornerRadius: r, style: .continuous))
                 .brightness(prominent && hover ? 0.06 : 0)
-                .scaleEffect(hover ? 1.02 : 1)
             }
             .buttonStyle(PressStyle())
             .onHover { hover = $0 }
@@ -373,7 +371,6 @@ struct TIconButton: View {
             }
             .frame(width: size, height: size)
             .contentShape(Rectangle())
-            .scaleEffect(hover && !theme.pixel ? 1.08 : 1)
         }
         .buttonStyle(PressStyle())
         .onHover { hover = $0 }
@@ -444,12 +441,16 @@ struct TField: View {
     @Environment(\.theme) private var theme
     @Binding var text: String
     var placeholder: String
+    var secure = false
     var onSubmit: () -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
         let pix = theme.pixel
-        TextField("", text: $text, prompt: Text(placeholder).foregroundColor(Color(hex: pix ? 0x666666 : theme.panelDim)))
+        let prompt = Text(placeholder).foregroundColor(Color(hex: pix ? 0x666666 : theme.panelDim))
+        Group {
+            if secure { SecureField("", text: $text, prompt: prompt) } else { TextField("", text: $text, prompt: prompt) }
+        }
             .textFieldStyle(.plain)
             .font(pix ? .mc(9) : theme.body(13))
             .foregroundStyle(Color(hex: pix ? 0xE0E0E0 : theme.panelText))
@@ -487,8 +488,8 @@ struct PanelBackground: View {
     var body: some View {
         if glassy && liquid {
             let shape = RoundedRectangle(cornerRadius: radius ?? theme.radius, style: .continuous)
-            LiquidGlass(shape: shape, tint: theme.pixel ? Color.black.opacity(0.3) : Color(hex: theme.panel, alpha: 0.22))
-                .shadow(color: .black.opacity(shadow ? 0.25 : 0), radius: 18, y: 8)
+            LiquidGlass(shape: shape, tint: theme.pixel ? Color.black.opacity(0.3) : Color(hex: theme.panel, alpha: 0.22), light: theme.isLight)
+                .shadow(color: theme.isLight ? Color(hex: 0xAC406E, alpha: shadow ? 0.18 : 0) : .black.opacity(shadow ? 0.25 : 0), radius: 18, y: 8)
         } else if theme.pixel {
             BevelBox(fill: 0xC6C6C6, light: 0xFFFFFF, dark: 0x555555, w: 3)
         } else {

@@ -16,3 +16,5 @@ android/local.properties
 *.p12
 *.jks
 *.keystore
+# настройки сервера профилей с паролем от базы
+server/config.php

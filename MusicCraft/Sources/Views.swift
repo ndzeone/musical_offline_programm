@@ -165,7 +165,7 @@ struct SidebarBackground: View {
 
     @ViewBuilder private func fill(_ shape: RoundedRectangle) -> some View {
         if m.liquidGlass {
-            LiquidGlass(shape: shape, tint: theme.pixel ? Color.black.opacity(0.35) : Color(hex: theme.panel, alpha: 0.25))
+            LiquidGlass(shape: shape, tint: theme.pixel ? Color.black.opacity(0.35) : Color(hex: theme.panel, alpha: 0.25), light: theme.isLight)
         } else if theme.pixel {
             shape.fill(Color(hex: 0x141414, alpha: 0.72))
         } else {
@@ -178,7 +178,7 @@ struct SidebarBackground: View {
 
     private var border: Color {
         if theme.pixel { return Color(hex: 0x5A5A5A) }
-        return m.liquidGlass ? .white.opacity(0.3) : Color(hex: theme.border, alpha: 0.3)
+        return m.liquidGlass ? .white.opacity(theme.isLight ? 0.9 : 0.3) : Color(hex: theme.border, alpha: 0.3)
     }
 
     @ViewBuilder private var edge: some View {
@@ -494,7 +494,9 @@ struct Stage: View {
     @EnvironmentObject var m: PlayerModel
 
     var body: some View {
-        if let np = m.nowPlaying {
+        if let np = m.nowPlaying, m.lyricsMissing, !np.loading, m.lyricsEntry?.lyrics == nil, m.stageLayout != .lyrics {
+            NoLyricsStage(np: np)
+        } else if let np = m.nowPlaying {
             GeometryReader { g in
                 let W = g.size.width, H = g.size.height
                 switch m.stageLayout {
@@ -528,6 +530,126 @@ struct Stage: View {
         } else {
             Welcome()
         }
+    }
+}
+
+/// Текста у песни нет: посередине большая пластинка, на наклейке — обложка, по кругу — исполнитель и название.
+struct NoLyricsStage: View {
+    @EnvironmentObject var m: PlayerModel
+    @Environment(\.theme) private var theme
+    let np: NowPlaying
+
+    var body: some View {
+        GeometryReader { g in
+            let d = min(max(min(g.size.width * 0.42, g.size.height * 0.55), 200), 460).rounded()
+            VStack(spacing: 16) {
+                RecordDisc(size: d, np: np)
+                VStack(spacing: 8) {
+                    TText(np.title, size: 30, title: true, align: .center).lineLimit(2)
+                    if !np.artist.isEmpty { TText(np.artist, size: 17, color: theme.dim, align: .center).lineLimit(1) }
+                    SourceBadge(np: np)
+                }
+                .frame(maxWidth: min(g.size.width * 0.8, 720))
+                HStack(spacing: 10) {
+                    if !m.status.isEmpty { TText(m.status, size: 12, alpha: 0.8) }
+                    if m.lyricsOffline { TButton("Повторить", icon: "arrow.clockwise", prominent: true) { m.retryLyrics() } }
+                    TButton("Найти текст", icon: "magnifyingglass") { m.modal = .lyrics }
+                    TButton("Вставить свой", icon: "doc.on.clipboard") { m.modal = .pasteLyrics }
+                }
+                TrackActions(np: np)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// Пластинка с наклейкой-обложкой. Картинка собирается один раз, крутится только поворотом.
+struct RecordDisc: View {
+    @EnvironmentObject var m: PlayerModel
+    @Environment(\.theme) private var theme
+    @Environment(\.visual) private var visual
+    let size: CGFloat
+    let np: NowPlaying
+    @State private var spin = Spinner()
+
+    private var ring: String {
+        let max = 50
+        var r = [np.artist, np.title].filter { !$0.isEmpty }.joined(separator: " • ").uppercased()
+        if r.isEmpty { r = "МУЗЫКА В ОФЛАЙН" }
+        if r.count > max - 3 { r = String(r.prefix(max - 4)) + "…" }
+        var t = r + " • "
+        while t.count + r.count + 3 <= max { t += r + " • " }
+        return t
+    }
+
+    var body: some View {
+        let face = DiscFace(size: size, text: ring, image: m.nowArtwork, label: (m.palette.first ?? 0xFF4F9A, m.palette.count > 1 ? m.palette[1] : 0xFFD36B),
+                            textColor: theme.pixel ? 0xFFFF55 : (theme.id == .neon ? 0x00F0FF : theme.id == .dora ? 0xFF9AD8 : 0xFFFFFF),
+                            accent: theme.pixel ? 0x7A5230 : theme.accent, pixel: theme.pixel, font: theme.id)
+        ZStack {
+            if visual.vinylSpin {
+                TimelineView(.animation(minimumInterval: max(m.frameInterval ?? 0, 1.0 / 60), paused: !m.isPlaying || m.animationsPaused)) { tl in
+                    face.equatable().rotationEffect(.degrees(spin.advance(tl.date.timeIntervalSinceReferenceDate, m.isPlaying)))
+                }
+            } else {
+                face.equatable()
+            }
+            // блик не крутится вместе с пластинкой
+            Circle()
+                .fill(AngularGradient(colors: [.clear, .white.opacity(0.13), .clear, .clear, .white.opacity(0.09), .clear], center: .center))
+                .allowsHitTesting(false)
+        }
+        .frame(width: size, height: size)
+        .shadow(color: theme.id == .neon ? Color(hex: 0x00D5FF, alpha: 0.5) : .black.opacity(0.45), radius: visual.glow ? 28 : 14, y: 12)
+    }
+}
+
+struct DiscFace: View, Equatable {
+    let size: CGFloat
+    let text: String
+    let image: NSImage?
+    let label: (UInt32, UInt32)
+    let textColor: UInt32
+    let accent: UInt32
+    let pixel: Bool
+    let font: ThemeID
+
+    static func == (a: DiscFace, b: DiscFace) -> Bool {
+        a.size == b.size && a.text == b.text && a.image === b.image && a.label == b.label && a.textColor == b.textColor && a.accent == b.accent
+    }
+
+    var body: some View {
+        let img = ArtKit.vinylImage(size: Int(size * 2), label: label)
+        let l = (size * 0.38).rounded()
+        ZStack {
+            Image(decorative: img, scale: 2).resizable().frame(width: size, height: size)
+            Canvas { ctx, s in
+                let c = CGPoint(x: s.width / 2, y: s.height / 2), r = s.width * 0.33
+                let chars = Array(text)
+                guard !chars.isEmpty else { return }
+                let step = 2 * Double.pi / Double(chars.count)
+                let fs = pixel ? size * 0.028 : size * 0.042
+                let theme = Theme.get(font)
+                for (i, ch) in chars.enumerated() {
+                    var g = ctx
+                    let a = Double(i) * step - .pi / 2
+                    g.translateBy(x: c.x + r * cos(a), y: c.y + r * sin(a))
+                    g.rotate(by: .radians(a + .pi / 2))
+                    let t = Text(String(ch)).font(pixel ? .mc(fs) : theme.title(fs)).foregroundColor(Color(hex: textColor, alpha: pixel ? 1 : 0.8))
+                    g.draw(t, at: .zero, anchor: .center)
+                }
+            }
+            .frame(width: size, height: size)
+            Group {
+                if let image { Image(nsImage: image).resizable().aspectRatio(contentMode: .fill) } else { Color(hex: accent) }
+            }
+            .frame(width: l, height: l)
+            .clipShape(Circle())
+            .overlay(Circle().strokeBorder(Color(hex: accent), lineWidth: max(2, size * 0.008)))
+            .overlay(Circle().fill(Color.black.opacity(0.85)).frame(width: size * 0.035, height: size * 0.035))
+        }
+        .frame(width: size, height: size)
+        .drawingGroup()
     }
 }
 

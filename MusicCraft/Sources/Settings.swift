@@ -15,9 +15,9 @@ enum PerfMode: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .eco: return "Для слабых компьютеров и работы от батареи: 30 кадров, без размытия и свечения"
-        case .balanced: return "60 кадров, живой фон и пластинка, без тяжёлых эффектов"
-        case .beauty: return "Все эффекты: стекло, свечение, размытие строк, пульс под басы"
+        case .eco: return "Для слабых компьютеров и работы от батареи: 30 кадров, фон в низком качестве"
+        case .balanced: return "Ровные 60 кадров почти без нагрузки: фон рисуется в пониженном разрешении, на паузе отдыхает"
+        case .beauty: return "Все эффекты: стекло, свечение, размытие строк, пульс под басы, частота как у экрана"
         }
     }
 
@@ -33,13 +33,13 @@ enum PerfMode: String, CaseIterable, Identifiable {
         switch self {
         case .eco:
             return VisualPrefs(fps: 30, liveBackground: true, glass: false, glow: false, blurLines: false,
-                               bassPulse: false, vinylSpin: false, particles: false)
+                               bassPulse: false, vinylSpin: false, particles: false, idleSlow: true, quality: 0.5)
         case .balanced:
             return VisualPrefs(fps: 60, liveBackground: true, glass: false, glow: true, blurLines: false,
-                               bassPulse: false, vinylSpin: true, particles: true)
+                               bassPulse: false, vinylSpin: true, particles: true, idleSlow: true, quality: 0.75)
         case .beauty:
             return VisualPrefs(fps: 0, liveBackground: true, glass: true, glow: true, blurLines: true,
-                               bassPulse: true, vinylSpin: true, particles: true)
+                               bassPulse: true, vinylSpin: true, particles: true, idleSlow: false, quality: 1)
         }
     }
 }
@@ -54,6 +54,8 @@ struct VisualPrefs: Equatable {
     var bassPulse: Bool         // текст и обложка «дышат» под басы
     var vinylSpin: Bool         // пластинка крутится
     var particles: Bool         // ноты, сердечки и молнии на ударах
+    var idleSlow: Bool = true   // на паузе фон рисуется реже (30 кадров)
+    var quality: Double = 0.75  // разрешение фона: 0.5 / 0.75 / 1
 }
 
 /// Как расположены текст и обложка на главном экране.
@@ -111,16 +113,17 @@ enum Page: Hashable {
 }
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, look, performance, sound, keys
+    case general, look, performance, sound, keys, profile
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: return "Основные"
         case .look: return "Оформление"
-        case .performance: return "Производительность"
+        case .performance: return "Скорость"
         case .sound: return "Звук"
         case .keys: return "Клавиши"
+        case .profile: return "Профиль"
         }
     }
 
@@ -131,6 +134,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .performance: return "gauge.with.dots.needle.67percent"
         case .sound: return "slider.horizontal.3"
         case .keys: return "keyboard"
+        case .profile: return "person.crop.circle"
         }
     }
 }

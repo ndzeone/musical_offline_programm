@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const versionArg = process.argv.find((a) => a.startsWith('--muz-version='));
 
 contextBridge.exposeInMainWorld('ElectronNative', {
-  version: versionArg ? versionArg.split('=')[1] : '2.3',
+  version: versionArg ? versionArg.split('=')[1] : '2.5.0',
   http: (url, headers) => ipcRenderer.invoke('http', url, headers || {}),
   readFile: (name) => ipcRenderer.invoke('readFile', name),
   writeFile: (name, text) => ipcRenderer.invoke('writeFile', name, text),
@@ -21,11 +21,22 @@ contextBridge.exposeInMainWorld('ElectronNative', {
   },
   openLink: (url) => ipcRenderer.invoke('openLink', url),
   ready: () => ipcRenderer.send('ready'),
-  // 2.4: события (браузер, загрузка обновления), обновление, браузер внутри программы
+  // 2.4: события (вкладки площадок, загрузка обновления), обновление
   onEvent: (fn) => ipcRenderer.on('nb-event', (e, name, payload) => fn(name, payload)),
   installUpdate: (url, name) => ipcRenderer.send('installUpdate', url, name),
-  browserOpen: (url, rect) => ipcRenderer.send('browserOpen', url, rect),
-  browserBounds: (rect) => ipcRenderer.send('browserBounds', rect),
-  browserNav: (action) => ipcRenderer.send('browserNav', action),
-  browserClose: () => ipcRenderer.send('browserClose')
+  // 2.5: запросы с телом, вся музыка компьютера, вкладки площадок
+  request: (url, method, headers, body) => ipcRenderer.invoke('request', url, method, headers || {}, body || ''),
+  deepScan: () => ipcRenderer.invoke('deepScan'),
+  filesExist: (list) => ipcRenderer.invoke('filesExist', list),
+  siteOpen: (tab, url, rect, show) => ipcRenderer.send('siteOpen', tab, url, rect, show),
+  siteShow: (tab, rect) => ipcRenderer.send('siteShow', tab, rect),
+  siteHide: () => ipcRenderer.send('siteHide'),
+  siteClose: (tab) => ipcRenderer.send('siteClose', tab),
+  siteBounds: (rect) => ipcRenderer.send('siteBounds', rect),
+  siteNav: (tab, action) => ipcRenderer.send('siteNav', tab, action),
+  siteLoad: (tab, url) => ipcRenderer.send('siteLoad', tab, url),
+  siteEval: (tab, js) => ipcRenderer.invoke('siteEval', tab, js),
+  sitePress: (tab, x, y, vw, vh) => ipcRenderer.send('sitePress', tab, x, y, vw, vh),
+  siteLogins: () => ipcRenderer.invoke('siteLogins'),
+  siteLogout: (platform) => ipcRenderer.invoke('siteLogout', platform)
 });

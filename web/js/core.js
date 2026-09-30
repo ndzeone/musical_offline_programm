@@ -112,9 +112,78 @@
     refresh: ['s', 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7'],
     globe: ['s', 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18'],
     fwd: ['s', 'M9 5l7 7-7 7'],
-    sparkle: ['f', 'M12 2l2.2 6.3L20.5 10l-6.3 2.2L12 18.5l-2.2-6.3L3.5 10l6.3-1.7z']
+    sparkle: ['f', 'M12 2l2.2 6.3L20.5 10l-6.3 2.2L12 18.5l-2.2-6.3L3.5 10l6.3-1.7z'],
+    // 2.5
+    user: ['s', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c.8-3.8 3.9-6 7.5-6s6.7 2.2 7.5 6'],
+    logout: ['s', 'M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10'],
+    keys: ['s', 'M3 7h18v11H3zM6.5 10.5h1M10.5 10.5h1M14.5 10.5h1M18 10.5h-.5M7.5 14.5h9'],
+    tabs: ['s', 'M3 8h18v12H3zM3 8V5h7v3M10 5h6v3'],
+    minimize: ['s', 'M5 5h14v14H5zM8.5 15.5h7'],
+    cpu: ['s', 'M7 7h10v10H7zM10 10h4v4h-4zM9.5 3v4M14.5 3v4M9.5 17v4M14.5 17v4M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4'],
+    disc: ['s', 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 6.5a5.5 5.5 0 0 0-5.5 5.5'],
+    shield: ['s', 'M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6zM8.8 12l2.3 2.3 4.3-4.6'],
+    cloud: ['s', 'M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.7 4.7 0 0 0 7 18.5z'],
+    scan: ['s', 'M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M7.5 12h9M12 7.5v9'],
+    palette: ['s', 'M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.9 1.4-1.9-.4-1.1.3-2.1 1.5-2.1H17a4 4 0 0 0 4-4c0-5.5-4-10-9-10zM7.5 11.5h.01M10 7.5h.01M14.5 7.5h.01'],
+    sound: ['s', 'M4 9.5v5h3.5L12 18.5v-13L7.5 9.5zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11'],
+    info: ['s', 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5.5M12 7.8v.2']
   };
+
+  // Пиксельные значки для темы «Майнкрафт» (12×12 точек, без сглаживания)
+  var PX = {
+    play: ['...X........', '...XX.......', '...XXX......', '...XXXX.....', '...XXXXX....', '...XXXXXX...', '...XXXXX....', '...XXXX.....', '...XXX......', '...XX.......', '...X........'],
+    pause: ['............', '..XXX..XXX..', '..XXX..XXX..', '..XXX..XXX..', '..XXX..XXX..', '..XXX..XXX..', '..XXX..XXX..', '..XXX..XXX..', '..XXX..XXX..', '..XXX..XXX..', '..XXX..XXX..'],
+    next: ['............', '.X.......XX.', '.XX......XX.', '.XXX.....XX.', '.XXXX....XX.', '.XXXXX...XX.', '.XXXXX...XX.', '.XXXX....XX.', '.XXX.....XX.', '.XX......XX.', '.X.......XX.'],
+    prev: ['............', '.XX.......X.', '.XX......XX.', '.XX.....XXX.', '.XX....XXXX.', '.XX...XXXXX.', '.XX...XXXXX.', '.XX....XXXX.', '.XX.....XXX.', '.XX......XX.', '.XX.......X.'],
+    heartF: ['............', '..XX....XX..', '.XXXX..XXXX.', 'XXXXXXXXXXXX', 'XXXXXXXXXXXX', 'XXXXXXXXXXXX', '.XXXXXXXXXX.', '..XXXXXXXX..', '...XXXXXX...', '....XXXX....', '.....XX.....'],
+    heart: ['............', '..XX....XX..', '.X..X..X..X.', 'X....XX....X', 'X..........X', 'X..........X', '.X........X.', '..X......X..', '...X....X...', '....X..X....', '.....XX.....'],
+    plus: ['............', '.....XX.....', '.....XX.....', '.....XX.....', '.....XX.....', '.XXXXXXXXXX.', '.XXXXXXXXXX.', '.....XX.....', '.....XX.....', '.....XX.....', '.....XX.....'],
+    music: ['......XXXXXX', '......XXXXXX', '......X....X', '......X....X', '......X....X', '......X....X', '......X....X', '..XXXXX.XXXX', '.XXXXXXXXXXX', '.XXXXXX.XXXX', '..XXXX...XX.'],
+    list: ['............', 'XX.XXXXXXXXX', 'XX.XXXXXXXXX', '............', 'XX.XXXXXXXXX', 'XX.XXXXXXXXX', '............', 'XX.XXXXXX...', 'XX.XXXXXX...', '............', '............'],
+    apps: ['XXXXX..XXXXX', 'X...X..X...X', 'X...X..X...X', 'X...X..X...X', 'XXXXX..XXXXX', '............', '............', 'XXXXX..XXXXX', 'X...X..X...X', 'X...X..X...X', 'XXXXX..XXXXX'],
+    gear: ['....XXXX....', '.XX.X..X.XX.', '.XXXX..XXXX.', '..X......X..', 'XXX..XX..XXX', 'X...X..X...X', 'XXX..XX..XXX', '..X......X..', '.XXXX..XXXX.', '.XX.X..X.XX.', '....XXXX....'],
+    search: ['..XXXX......', '.X....X.....', 'X......X....', 'X......X....', 'X......X....', '.X....X.....', '..XXXXXX....', '.......XX...', '........XX..', '.........XX.', '..........XX'],
+    more: ['............', '.....XX.....', '.....XX.....', '............', '............', '.....XX.....', '.....XX.....', '............', '............', '.....XX.....', '.....XX.....'],
+    back: ['............', '.......XX...', '......XX....', '.....XX.....', '....XX......', '...XX.......', '....XX......', '.....XX.....', '......XX....', '.......XX...', '............'],
+    fwd: ['............', '...XX.......', '....XX......', '.....XX.....', '......XX....', '.......XX...', '......XX....', '.....XX.....', '....XX......', '...XX.......', '............'],
+    close: ['............', '.XX......XX.', '..XX....XX..', '...XX..XX...', '....XXXX....', '.....XX.....', '....XXXX....', '...XX..XX...', '..XX....XX..', '.XX......XX.', '............'],
+    check: ['............', '..........XX', '.........XX.', '........XX..', '.......XX...', 'XX....XX....', '.XX..XX.....', '..XXXX......', '...XX.......', '............', '............'],
+    shuffle: ['............', '........XX..', 'XXX....XXXXX', '...X..X.XX..', '....XX......', '....XX......', '...X..X.XX..', 'XXX....XXXXX', '........XX..', '............', '............'],
+    repeat: ['.......X....', '.XXXXXXXX...', 'X......X....', 'X...........', 'X...........', '...........X', '...........X', '....X......X', '...XXXXXXXX.', '....X.......', '............'],
+    repeat1: ['.......X....', '.XXXXXXXX...', 'X......X....', 'X....XX.....', 'X.....X.....', '......X....X', '.....XXX...X', '....X......X', '...XXXXXXXX.', '....X.......', '............'],
+    lyrics: ['XXXXXXXXXXXX', 'X..........X', 'X.XXXXXXXX.X', 'X..........X', 'X.XXXXX....X', 'X..........X', 'XXXXX.XXXXXX', '...XX.......', '..XX........', '.XX.........', '............'],
+    folder: ['............', 'XXXXX.......', 'X...XXXXXXXX', 'X..........X', 'X..........X', 'X..........X', 'X..........X', 'X..........X', 'XXXXXXXXXXXX', '............', '............'],
+    trash: ['....XXXX....', 'XXXXXXXXXXXX', '............', '.XXXXXXXXXX.', '.X..X..X..X.', '.X..X..X..X.', '.X..X..X..X.', '.X..X..X..X.', '.X..X..X..X.', '.XXXXXXXXXX.', '............'],
+    download: ['.....XX.....', '.....XX.....', '.....XX.....', '..XX.XX.XX..', '...XXXXXX...', '....XXXX....', '.....XX.....', 'X..........X', 'X..........X', 'XXXXXXXXXXXX', '............'],
+    upload: ['.....XX.....', '....XXXX....', '...XXXXXX...', '..XX.XX.XX..', '.....XX.....', '.....XX.....', '.....XX.....', 'X..........X', 'X..........X', 'XXXXXXXXXXXX', '............'],
+    refresh: ['...XXXX..X..', '..X....XXX..', '.X.....XXX..', 'X...........', 'X...........', 'X..........X', 'X..........X', '.X........X.', '..X......X..', '...XXXXXX...', '............'],
+    sparkle: ['.....XX.....', '.....XX.....', '....XXXX....', 'XXXXXXXXXXXX', '.XXXXXXXXXX.', '..XXXXXXXX..', '...XXXXXX...', '..XXX..XXX..', '.XX......XX.', 'XX........XX', '............'],
+    user: ['....XXXX....', '...XXXXXX...', '...XXXXXX...', '...XXXXXX...', '....XXXX....', '............', '..XXXXXXXX..', '.XXXXXXXXXX.', 'XXXXXXXXXXXX', 'XXXXXXXXXXXX', '............'],
+    globe: ['...XXXXXX...', '..X..XX..X..', '.X..X..X..X.', 'XXXXXXXXXXXX', 'X...X..X...X', 'X...X..X...X', 'XXXXXXXXXXXX', '.X..X..X..X.', '..X..XX..X..', '...XXXXXX...', '............'],
+    focus: ['XXXX....XXXX', 'X..........X', 'X..........X', 'X..........X', '............', '............', '............', 'X..........X', 'X..........X', 'X..........X', 'XXXX....XXXX'],
+    minimize: ['XXXXXXXXXXXX', 'X..........X', 'X..........X', 'X..........X', 'X..........X', 'X..........X', 'X..XXXXXX..X', 'X..XXXXXX..X', 'X..........X', 'XXXXXXXXXXXX', '............'],
+    tabs: ['XXXXX.XXXX..', 'X...X.X..X..', 'XXXXXXXXXXXX', 'X..........X', 'X..........X', 'X..........X', 'X..........X', 'X..........X', 'X..........X', 'XXXXXXXXXXXX', '............']
+  };
+  var pxCache = {};
+  function pixelPath(rows) {
+    var d = '';
+    rows.forEach(function (r, y) {
+      var x = 0;
+      while (x < r.length) {
+        if (r[x] !== 'X') { x++; continue; }
+        var s = x;
+        while (x < r.length && r[x] === 'X') x++;
+        d += 'M' + s + ' ' + y + 'h' + (x - s) + 'v1h-' + (x - s) + 'z';
+      }
+    });
+    return d;
+  }
   function icon(name, cls) {
+    var th = document.body && document.body.dataset.theme;
+    if (th === 'minecraft' && PX[name]) {
+      var d = pxCache[name] || (pxCache[name] = pixelPath(PX[name]));
+      return '<svg viewBox="0 -0.5 12 12" class="px ' + (cls || '') + '" fill="currentColor" shape-rendering="crispEdges"><path d="' + d + '"/></svg>';
+    }
     var p = P[name] || P.music;
     return p[0] === 'f'
       ? '<svg viewBox="0 0 24 24" class="' + (cls || '') + '" fill="currentColor"><path d="' + p[1] + '"/></svg>'
@@ -151,14 +220,22 @@
   var DEFAULTS = {
     theme: 'minecraft', background: 'minecraft', perf: 'balanced', textScale: 1, karaoke: 'letters',
     autoLyrics: true, trackToasts: true, keepScreenOn: false, bass: 0, treble: 0, shuffle: false, repeat: 'all',
-    volume: 0.8, particles: true, lastTab: 'np',
+    volume: 1, particles: true, lastTab: 'np',
     // 2.4: закруглённая панель (на телефоне сразу), жидкое стекло, автопроверка обновлений
-    roundPanel: mobile, glass: false, autoUpdates: true, seen: {}, skipVersion: ''
+    roundPanel: mobile, glass: false, autoUpdates: true, seen: {}, skipVersion: '',
+    // 2.5: производительность по отдельности (режим задаёт их все сразу)
+    fps: 60, bgQuality: 1, bgAnim: true, idleSlow: true, vinylSpin: true, lyricBlur: false, panelBlur: !mobile,
+    batterySaver: true, showFps: false,
+    // 2.5: свои клавиши, раздел настроек, профиль
+    keys: {}, setTab: 'general', syncServer: ''
   };
 
   // ---------- новые функции: плашка «Новое» 240 минут после первого запуска версии ----------
   var NEW_MINUTES = 240;
-  var FEATURES = { updates: '2.4.0', roundPanel: '2.4.0', glass: '2.4.0', browser: '2.4.0' };
+  var FEATURES = {
+    updates: '2.4.0', roundPanel: '2.4.0', glass: '2.4.0', browser: '2.4.0',
+    profile: '2.5.0', tabs: '2.5.0', perf: '2.5.0', keys: '2.5.0', scan: '2.5.0', vinyl: '2.5.0'
+  };
   function isNew(id) {
     var v = FEATURES[id], t = v && Store.settings.seen && Store.settings.seen[v];
     return !!t && Date.now() - t < NEW_MINUTES * 60000;
@@ -175,11 +252,29 @@
     }
     return 0;
   }
+  // Режимы — наборы отдельных настроек. «Плавно» — 60 кадров, но фон рисуется в пониженном разрешении
+  // (он размытый и так), без тяжёлого размытия под панелями: картинка ровная, а телефон не греется.
   var PERF = {
-    eco: { name: 'Экономия', fps: 20, particles: false, blur: false, dpr: 1, tag: 'Дольше работает от батареи' },
-    balanced: { name: 'Баланс', fps: mobile ? 30 : 60, particles: true, blur: false, dpr: 1.5, tag: 'Плавно и не греет телефон' },
-    beauty: { name: 'Красота', fps: 60, particles: true, blur: true, dpr: 2, tag: 'Все эффекты на максимум' }
+    eco: { name: 'Экономия', tag: 'Дольше работает от батареи',
+           set: { fps: 30, bgQuality: 0.5, bgAnim: true, idleSlow: true, particles: false, vinylSpin: false, lyricBlur: false, panelBlur: false } },
+    balanced: { name: 'Плавно 60', tag: 'Ровные 60 кадров и почти без нагрузки',
+                set: { fps: 60, bgQuality: 0.75, bgAnim: true, idleSlow: true, particles: true, vinylSpin: true, lyricBlur: false, panelBlur: false } },
+    beauty: { name: 'Красота', tag: 'Все эффекты на максимум',
+              set: { fps: 0, bgQuality: 1, bgAnim: true, idleSlow: false, particles: true, vinylSpin: true, lyricBlur: true, panelBlur: true } }
   };
+  var PERF_KEYS = ['fps', 'bgQuality', 'bgAnim', 'idleSlow', 'particles', 'vinylSpin', 'lyricBlur', 'panelBlur'];
+  // Какой режим сейчас (или null, если настройки поменяли по отдельности)
+  function perfMode() {
+    var s = Store.settings;
+    return Object.keys(PERF).filter(function (k) {
+      return PERF_KEYS.every(function (p) { return PERF[k].set[p] === s[p]; });
+    })[0] || null;
+  }
+  function applyPerfMode(k) {
+    if (!PERF[k]) return;
+    Object.assign(Store.settings, PERF[k].set);
+    Store.settings.perf = k;
+  }
 
   var Store = {
     settings: Object.assign({}, DEFAULTS),
@@ -187,8 +282,13 @@
     loaded: false,
     load: function () {
       return Promise.all([NB.readFile('settings.json'), NB.readFile('library.json')]).then(function (r) {
-        try { Object.assign(Store.settings, JSON.parse(r[0] || '{}')); } catch (e) {}
+        var raw = {};
+        try { raw = JSON.parse(r[0] || '{}') || {}; } catch (e) {}
+        Object.assign(Store.settings, raw);
         if (Store.settings.roundPanel == null) Store.settings.roundPanel = mobile;
+        // 2.5: производительность — отдельные настройки. После обновления берём набор прежнего режима
+        if (!('fps' in raw)) applyPerfMode(PERF[raw.perf] ? raw.perf : 'balanced');
+        if (!Store.settings.keys || typeof Store.settings.keys !== 'object') Store.settings.keys = {};
         Store.playlists = Store.parseLibrary(r[1]) || [];
         Store.ensureFavorites();
         Store.loaded = true;
@@ -260,6 +360,10 @@
   window.PLATFORMS = PLATFORMS;
   window.PKG = PKG;
   window.PERF = PERF;
+  window.PERF_KEYS = PERF_KEYS;
+  window.perfMode = perfMode;
+  window.applyPerfMode = applyPerfMode;
+  window.PX_ICONS = PX;
   window.Store = Store;
   window.Cache = Cache;
   window.toast = toast;

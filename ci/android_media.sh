@@ -8,4 +8,7 @@ mk() { ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=$1:duration=30" -i 
 mk 220 "Jingle Bells" "Frank Sinatra" track1
 mk 330 "Второй трек" "Демо Исполнитель" track2
 mk 440 "Третий трек" "Ещё кто-то" track3
+# файл «в дальней папке»: его медиатека заранее не видит (проверка поиска всей музыки)
+mkdir -p "$OUT/hidden"
+mk 550 "Спрятанный трек" "Проверка" hidden/track4
 ls -la "$OUT"

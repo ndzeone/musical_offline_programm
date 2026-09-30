@@ -61,6 +61,9 @@ struct Theme {
         return .system(size: size, weight: .semibold)
     }
 
+    /// Светлая тема: стекло и системные элементы — светлые
+    var isLight: Bool { id == .kitty }
+
     static func get(_ id: ThemeID) -> Theme { all.first { $0.id == id } ?? all[0] }
 
     static let all: [Theme] = [

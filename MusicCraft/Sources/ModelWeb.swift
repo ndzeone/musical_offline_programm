@@ -29,6 +29,13 @@ extension PlayerModel {
         page = .account(id)
     }
 
+    /// Свернуть все окна площадок: страницы прячутся (музыка на них играет дальше), окна входа сворачиваются.
+    func minimizeAllSites() {
+        for s in sessions.values { s.minimizePopups() }
+        if case .account = page { closeBrowser() }
+        announce("Окна площадок свёрнуты — музыка играет дальше")
+    }
+
     func closeBrowser() {
         if let id = openAccountID { session(id)?.touch() }
         if case .account = page { page = .stage }
@@ -142,6 +149,7 @@ extension PlayerModel {
 
     func webLoggedIn(_ s: WebSession) {
         announce("Вход в \(s.platform.title) выполнен ✓")
+        Task { await ProfileStore.shared.sync() }
     }
 
     func webDetectedName(_ s: WebSession, _ name: String) {
@@ -149,6 +157,18 @@ extension PlayerModel {
         accounts[i].name = name
         accounts[i].autoNamed = false
         if activeWebID == s.accountID { refreshNowPlaying() }
+    }
+
+    /// Трек площадки так и не заиграл (страница зависла или аккаунт выгрузили) — не ждём вечно.
+    func checkWebExpect() {
+        guard let e = webExpect, !e.confirmed, Date().timeIntervalSince(e.started) > 40 else { return }
+        if let s = session(e.session) {
+            s.cancelAutoplay()
+            webAutoplayFailed(s)
+        } else {
+            webExpect = nil
+            if queue != nil { skipSoon() } else { isPlaying = false; refreshNowPlaying() }
+        }
     }
 
     func webAutoplayFailed(_ s: WebSession) {

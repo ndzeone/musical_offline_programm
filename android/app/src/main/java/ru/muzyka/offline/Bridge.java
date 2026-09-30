@@ -35,7 +35,7 @@ final class Bridge {
         try {
             return app.getPackageManager().getPackageInfo(app.getPackageName(), 0).versionName;
         } catch (Exception e) {
-            return "2.3";
+            return "2.5";
         }
     }
 
@@ -129,15 +129,52 @@ final class Bridge {
 
     @JavascriptInterface public void ready() { a.runOnUiThread(() -> a.root.requestApplyInsets()); }
 
-    // ---------- 2.4: обновления и браузер внутри программы ----------
+    // ---------- обновления ----------
 
     @JavascriptInterface public void installUpdate(String url, String name) { a.installUpdate(url, name); }
 
-    @JavascriptInterface public void browserOpen(String url, String rect) { a.browserOpen(url, rect); }
+    // ---------- 2.5: сеть с телом запроса (профиль), вся музыка телефона ----------
 
-    @JavascriptInterface public void browserBounds(String rect) { a.browserBounds(rect); }
+    @JavascriptInterface public void request(String id, String url, String method, String headers, String body) {
+        pool.execute(() -> a.reply(id, Net.request(url, method, headers, body)));
+    }
 
-    @JavascriptInterface public void browserNav(String action) { a.browserNav(action); }
+    @JavascriptInterface public void deepScan(String id) { a.deepScan(id); }
 
-    @JavascriptInterface public void browserClose() { a.browserClose(); }
+    // ---------- 2.5: сайты площадок во вкладках ----------
+
+    @JavascriptInterface public void siteOpen(String tab, String url, String rect, boolean show) {
+        a.runOnUiThread(() -> a.sites().open(tab, url, rect, show));
+    }
+
+    @JavascriptInterface public void siteShow(String tab, String rect) { a.runOnUiThread(() -> a.sites().show(tab, rect)); }
+
+    @JavascriptInterface public void siteHide() { a.runOnUiThread(() -> a.sites().hide()); }
+
+    @JavascriptInterface public void siteClose(String tab) { a.runOnUiThread(() -> a.sites().close(tab)); }
+
+    @JavascriptInterface public void siteBounds(String rect) { a.runOnUiThread(() -> a.sites().bounds(rect)); }
+
+    @JavascriptInterface public void siteNav(String tab, String action) { a.runOnUiThread(() -> a.sites().nav(tab, action)); }
+
+    @JavascriptInterface public void siteLoad(String tab, String url) { a.runOnUiThread(() -> a.sites().load(tab, url)); }
+
+    @JavascriptInterface public void siteEval(String id, String tab, String js) { a.runOnUiThread(() -> a.sites().eval(id, tab, js)); }
+
+    @JavascriptInterface public void sitePress(String tab, double x, double y, double vw, double vh) {
+        a.runOnUiThread(() -> a.sites().press(tab, x, y, vw, vh));
+    }
+
+    @JavascriptInterface public String siteLogins() { return SiteTabs.logins(); }
+
+    @JavascriptInterface public boolean siteLogout(String platform) { return SiteTabs.logout(platform); }
+
+    /** Трек с сайта — в уведомление и на экран блокировки; служба не даёт музыке уснуть. Пусто — сайт не играет. */
+    @JavascriptInterface public void siteMirror(String json) {
+        Engine e = engine();
+        e.main.post(() -> e.setSite(json));
+    }
+
+    /** Плейлист с треками площадок: «дальше/назад» из уведомления решает страница. */
+    @JavascriptInterface public void delegateSkips(boolean on) { engine().delegate = on; }
 }

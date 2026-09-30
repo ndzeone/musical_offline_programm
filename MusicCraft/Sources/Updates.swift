@@ -176,7 +176,8 @@ enum Updates {
 /// Новые функции помечаются «Новое» на 240 минут после первого запуска версии, где они появились.
 enum NewFeatures {
     static let minutes: Double = 240
-    static let list: [String: String] = ["updates": "2.4.0", "roundSidebar": "2.4.0", "liquidGlass": "2.4.0"]
+    static let list: [String: String] = ["updates": "2.4.0", "roundSidebar": "2.4.0", "liquidGlass": "2.4.0",
+                                          "tabs": "2.5.0", "profile": "2.5.0", "perf": "2.5.0", "keys": "2.5.0", "scan": "2.5.0", "vinyl": "2.5.0"]
 
     static func markLaunch() {
         let k = "seen-" + Updates.current
@@ -216,17 +217,25 @@ struct NewBadge: View {
 struct LiquidGlass<S: InsettableShape>: View {
     let shape: S
     var tint: Color
+    /// Светлая тема: светлое стекло (иначе система рисует его тёмным, и тёмный текст не читается)
+    var light = false
 
     var body: some View {
-        if #available(macOS 26.0, *) {
-            Color.clear.glassEffect(.regular.tint(tint), in: shape)
-        } else {
-            shape.fill(.ultraThinMaterial)
-                .overlay(shape.fill(tint))
-                .overlay(shape.fill(LinearGradient(colors: [.white.opacity(0.2), .white.opacity(0.02)], startPoint: .top, endPoint: .bottom)))
-                .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.08)],
-                                                           startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+        Group {
+            if #available(macOS 26.0, *) {
+                ZStack {
+                    if light { shape.fill(Color.white.opacity(0.28)) }
+                    Color.clear.glassEffect(.regular.tint(light ? Color.white.opacity(0.42) : tint), in: shape)
+                }
+            } else {
+                shape.fill(.ultraThinMaterial)
+                    .overlay(shape.fill(light ? Color.white.opacity(0.5) : tint))
+                    .overlay(shape.fill(LinearGradient(colors: [.white.opacity(light ? 0.45 : 0.2), .white.opacity(light ? 0.1 : 0.02)], startPoint: .top, endPoint: .bottom)))
+            }
         }
+        .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(light ? 0.95 : 0.6), .white.opacity(light ? 0.4 : 0.08)],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+        .environment(\.colorScheme, light ? .light : .dark)
     }
 }
 

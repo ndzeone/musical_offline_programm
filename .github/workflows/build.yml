@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 env:
-  VERSION_NAME: '2.4.0'
-  VERSION_CODE: '204'
+  VERSION_NAME: '2.5.0'
+  VERSION_CODE: '205'
 
 jobs:
   android:
@@ -100,7 +100,11 @@ jobs:
           cat "$GITHUB_WORKSPACE/windows-shots/report.txt"
           grep -q "library saved: true" "$GITHUB_WORKSPACE/windows-shots/report.txt"
           grep -q '"title":"Example Domain"' "$GITHUB_WORKSPACE/windows-shots/report.txt"
-          grep -q "browser closed: true" "$GITHUB_WORKSPACE/windows-shots/report.txt"
+          grep -q "site agent: true" "$GITHUB_WORKSPACE/windows-shots/report.txt"
+          grep -q '"kind":"site","title":"Тестовая песня"' "$GITHUB_WORKSPACE/windows-shots/report.txt"
+          grep -q "site paused from app: true" "$GITHUB_WORKSPACE/windows-shots/report.txt"
+          grep -q "tabs: 2" "$GITHUB_WORKSPACE/windows-shots/report.txt"
+          grep -q "browser minimized: true" "$GITHUB_WORKSPACE/windows-shots/report.txt"
           grep -q '"s":"available"' "$GITHUB_WORKSPACE/windows-shots/report.txt"
           grep -q 'update downloaded: {"file"' "$GITHUB_WORKSPACE/windows-shots/report.txt"
       - name: Проверка установщика (тихая установка)
@@ -155,10 +159,41 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: macos-dmg, path: out/ }
 
+  server:
+    name: Сервер профилей (PHP + MySQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: База данных и PHP
+        run: |
+          sudo systemctl start mysql.service
+          mysql -uroot -proot -e "CREATE DATABASE muzyka CHARACTER SET utf8mb4; CREATE USER 'muzyka'@'localhost' IDENTIFIED BY 'test-pass'; GRANT ALL ON muzyka.* TO 'muzyka'@'localhost';"
+          mysql -uroot -proot muzyka < server/schema.sql
+          php -v
+          php -m | grep -i pdo_mysql
+          cat > server/config.php <<'PHP'
+          <?php return ['dsn' => 'mysql:host=127.0.0.1;dbname=muzyka;charset=utf8mb4', 'user' => 'muzyka', 'pass' => 'test-pass', 'session_days' => 30, 'cors_origins' => ['http://127.0.0.1:8090']];
+          PHP
+          nohup php -S 127.0.0.1:8088 -t server > php.log 2>&1 &
+          nohup python3 -m http.server 8090 -d web > web.log 2>&1 &
+          sleep 2
+      - name: Проверка API
+        run: python3 ci/server_test.py http://127.0.0.1:8088/api.php
+      - name: Профиль в программе (регистрация, отметки, вход, удаление)
+        run: |
+          google-chrome --headless=new --remote-debugging-port=9222 --no-first-run --user-data-dir="$RUNNER_TEMP/chrome" about:blank > chrome.log 2>&1 &
+          sleep 5
+          node ci/web_profile.mjs http://127.0.0.1:8090/index.html http://127.0.0.1:8088/api.php server-shots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: server-check, path: 'server-shots/' }
+
   release:
     name: Выпуск на GitHub
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [android, android-test, windows, macos]
+    needs: [android, android-test, windows, macos, server]
     runs-on: ubuntu-latest
     permissions: { contents: write }
     steps:

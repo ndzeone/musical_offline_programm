@@ -6,8 +6,8 @@ cd "$(dirname "$0")"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 ARCH="$(uname -m)"
 ARCHS="${ARCHS:-$ARCH}"
-VERSION="2.4.0"
-BUILD="6"
+VERSION="2.5.0"
+BUILD="7"
 NAME="Музыка в офлайн"
 EXEC="MuzykaOffline"
 ROOT="$(cd .. && pwd)"
@@ -41,6 +41,8 @@ done
 iconutil -c icns "$B/icon.iconset" -o "$S/Contents/Resources/AppIcon.icns"
 
 cp Resources/*.ttf "$S/Contents/Resources/"
+# Помощник для сайтов площадок — общий с версиями для Windows и Android
+cp "$ROOT/web/agent/site-agent.js" "$S/Contents/Resources/"
 cat > "$S/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

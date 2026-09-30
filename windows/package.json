@@ -1,7 +1,7 @@
 {
   "name": "muzyka-offline",
   "productName": "Музыка в офлайн",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Музыка в офлайн — плеер с текстами песен, темами и живыми фонами",
   "author": "ndzeone",
   "license": "UNLICENSED",
@@ -30,6 +30,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "site-preload.js",
       "files.js",
       "package.json"
     ],

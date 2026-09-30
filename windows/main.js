@@ -1,6 +1,6 @@
 // «Музыка в офлайн» для Windows: окно с общим интерфейсом (папка web) и доступ к файлам компьютера.
 'use strict';
-const { app, BrowserWindow, WebContentsView, protocol, ipcMain, dialog, shell, net, nativeImage, Menu } = require('electron');
+const { app, BrowserWindow, WebContentsView, protocol, ipcMain, dialog, shell, net, nativeImage, Menu, session } = require('electron');
 const { spawn } = require('child_process');
 const https = require('https');
 const path = require('path');
@@ -215,52 +215,196 @@ function sendEvent(name, payload) {
   if (win && !win.isDestroyed()) win.webContents.send('nb-event', name, payload);
 }
 
-// ---------- браузер внутри программы: сайт площадки в прямоугольнике страницы ----------
-let site = null, siteStart = '';
-function siteState(extra) {
-  const wc = site.webContents, h = wc.navigationHistory;
-  return Object.assign({ url: wc.getURL(), title: wc.getTitle(), canBack: h.canGoBack(), canFwd: h.canGoForward(), loading: wc.isLoading() }, extra || {});
+// ---------- сайты площадок во вкладках: у каждой вкладки своя страница, вход общий ----------
+const SITE_PARTITION = 'persist:sites';
+const sites = new Map();          // вкладка → WebContentsView
+let shownTab = null, lastRect = null, agentJs = null, chromeUA = '';
+function agent() {
+  if (agentJs === null) { try { agentJs = fs.readFileSync(path.join(WEB_ROOT, 'agent', 'site-agent.js'), 'utf8'); } catch (e) { agentJs = ''; } }
+  return agentJs;
 }
-function siteBounds(r) {
-  if (!site || !r) return;
-  site.setBounds({ x: Math.round(r.x || 0), y: Math.round(r.y || 0), width: Math.max(1, Math.round(r.w || 1)), height: Math.max(1, Math.round(r.h || 1)) });
+ipcMain.on('site-agent', (e) => { e.returnValue = agent(); });
+function tabOf(wc) { for (const [id, v] of sites) if (v.webContents === wc) return id; return null; }
+ipcMain.on('site-msg', (e, data) => { const tab = tabOf(e.sender); if (tab) sendEvent('siteMsg', { tab, data }); });
+function siteState(tab, extra) {
+  const v = sites.get(tab); if (!v) return null;
+  const wc = v.webContents, h = wc.navigationHistory;
+  return Object.assign({ tab, url: wc.getURL(), title: wc.getTitle(), canBack: h.canGoBack(), canFwd: h.canGoForward(), loading: wc.isLoading() }, extra || {});
 }
-function createSite() {
-  site = new WebContentsView({ webPreferences: { partition: 'persist:sites', contextIsolation: true, sandbox: true } });
-  const wc = site.webContents;
+function place(v, r) {
+  if (!v || !r) return;
+  v.setBounds({ x: Math.round(r.x || 0), y: Math.round(r.y || 0), width: Math.max(1, Math.round(r.w || 1)), height: Math.max(1, Math.round(r.h || 1)) });
+}
+const POPUP = { width: 520, height: 720, autoHideMenuBar: true, title: 'Вход', backgroundColor: '#ffffff',
+  webPreferences: { partition: SITE_PARTITION, sandbox: true, contextIsolation: true } };
+function createSite(tab) {
+  const v = new WebContentsView({ webPreferences: { partition: SITE_PARTITION, contextIsolation: true, sandbox: true,
+    preload: path.join(__dirname, 'site-preload.js'), autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false, spellcheck: false } });
+  const wc = v.webContents;
   // сайты видят обычный Chrome
-  wc.setUserAgent(wc.getUserAgent().replace(/\s(Electron|muzyka-offline|MuzykaOffline|Музыка в офлайн)\/\S+/gi, ''));
-  wc.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) wc.loadURL(url); else shell.openExternal(url); return { action: 'deny' }; });
-  wc.on('will-navigate', (e, url) => { if (!/^https?:/.test(url)) { e.preventDefault(); shell.openExternal(url); } });
-  const upd = (extra) => sendEvent('browser', siteState(extra));
+  chromeUA = chromeUA || wc.getUserAgent().replace(/\s(Electron|muzyka-offline|MuzykaOffline|Музыка в офлайн)\/\S+/gi, '');
+  wc.setUserAgent(chromeUA);
+  // окно входа (Google, VK ID, Яндекс ID) — отдельным окошком программы; обычная ссылка «в новой вкладке» — новой вкладкой
+  wc.setWindowOpenHandler(({ url, disposition }) => {
+    if (!/^https?:/.test(url)) return { action: 'deny' };
+    if (disposition === 'new-window') return { action: 'allow', overrideBrowserWindowOptions: Object.assign({ parent: win }, POPUP) };
+    sendEvent('siteNew', { tab, url });
+    return { action: 'deny' };
+  });
+  wc.on('did-create-window', (w) => { try { w.webContents.setUserAgent(chromeUA); w.setMenuBarVisibility(false); } catch (e) {} });
+  // ссылки «открыть в приложении» (spotify:, vk: …) остаются в программе
+  wc.on('will-navigate', (e, url) => { if (!/^https?:/.test(url)) e.preventDefault(); });
+  const upd = (extra) => sendEvent('site', siteState(tab, extra));
   wc.on('did-start-loading', () => upd({ loading: true, progress: 0.1 }));
   wc.on('did-stop-loading', () => upd({ loading: false, progress: 1 }));
+  wc.on('dom-ready', () => { const js = agent(); if (js) wc.executeJavaScript(js).catch(() => {}); });
   wc.on('page-title-updated', () => upd());
   wc.on('did-navigate', () => upd());
   wc.on('did-navigate-in-page', () => upd());
-  wc.on('render-process-gone', () => { try { win.contentView.removeChildView(site); } catch (e) {} site = null; sendEvent('browser', { closed: true }); });
+  wc.on('render-process-gone', () => {
+    try { win.contentView.removeChildView(v); } catch (e) {}
+    sites.delete(tab); if (shownTab === tab) shownTab = null;
+    sendEvent('siteGone', { tab });
+  });
+  sites.set(tab, v);
+  return v;
 }
-ipcMain.on('browserOpen', (e, url, rect) => {
+function showSite(tab) {
+  for (const [id, v] of sites) if (id !== tab) { try { win.contentView.removeChildView(v); } catch (e) {} }
+  const v = sites.get(tab);
+  shownTab = v ? tab : null;
+  if (!v) return;
+  win.contentView.addChildView(v);
+  place(v, lastRect);
+  sendEvent('site', siteState(tab));
+}
+ipcMain.on('siteOpen', (e, tab, url, rect, show) => {
   if (!win) return;
-  if (!site) createSite();
-  win.contentView.addChildView(site);
-  siteBounds(rect);
-  // тот же сайт уже открыт — показываем как есть (вход и музыка сохраняются)
-  if (!(site.webContents.getURL() && url === siteStart)) site.webContents.loadURL(url).catch(() => {});
-  siteStart = url;
-  sendEvent('browser', siteState());
+  if (rect && rect.w) lastRect = rect;
+  const v = sites.get(tab) || createSite(tab);
+  place(v, lastRect || { x: 0, y: 0, w: 800, h: 600 });
+  v.webContents.loadURL(url).catch(() => {});
+  if (show) showSite(tab);
 });
-ipcMain.on('browserBounds', (e, rect) => siteBounds(rect));
-ipcMain.on('browserNav', (e, action) => {
-  if (!site) return;
-  const wc = site.webContents, h = wc.navigationHistory;
+ipcMain.on('siteShow', (e, tab, rect) => { if (!win) return; if (rect && rect.w) lastRect = rect; showSite(tab); });
+ipcMain.on('siteHide', () => {
+  shownTab = null;
+  for (const v of sites.values()) { try { win.contentView.removeChildView(v); } catch (e) {} }
+});
+ipcMain.on('siteClose', (e, tab) => {
+  const v = sites.get(tab); if (!v) return;
+  try { win.contentView.removeChildView(v); } catch (err) {}
+  sites.delete(tab); if (shownTab === tab) shownTab = null;
+  try { v.webContents.close(); } catch (err) {}
+});
+ipcMain.on('siteBounds', (e, rect) => { if (rect && rect.w) lastRect = rect; if (shownTab) place(sites.get(shownTab), lastRect); });
+ipcMain.on('siteNav', (e, tab, action) => {
+  const v = sites.get(tab); if (!v) return;
+  const wc = v.webContents, h = wc.navigationHistory;
   if (action === 'back' && h.canGoBack()) h.goBack();
   else if (action === 'forward' && h.canGoForward()) h.goForward();
   else if (action === 'reload') wc.reload();
   else if (action === 'stop') wc.stop();
 });
-// закрыть = спрятать: страница живёт дальше (если на сайте играет музыка, она не прервётся)
-ipcMain.on('browserClose', () => { if (site && win) { try { win.contentView.removeChildView(site); } catch (e) {} } });
+ipcMain.on('siteLoad', (e, tab, url) => {
+  const v = sites.get(tab) || createSite(tab);
+  if (!v.getBounds().width) place(v, lastRect || { x: 0, y: 0, w: 800, h: 600 });
+  v.webContents.loadURL(url).catch(() => {});
+});
+ipcMain.handle('siteEval', async (e, tab, js) => {
+  const v = sites.get(tab); if (!v) return null;
+  try { const r = await v.webContents.executeJavaScript(js, true); return r == null ? null : r; } catch (err) { return null; }
+});
+// Настоящее нажатие мышью в точку страницы (сайт считает его нажатием человека)
+ipcMain.on('sitePress', (e, tab, x, y) => {
+  const v = sites.get(tab); if (!v) return;
+  const wc = v.webContents, p = { x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 };
+  try {
+    wc.sendInputEvent(Object.assign({ type: 'mouseMove' }, p));
+    wc.sendInputEvent(Object.assign({ type: 'mouseDown' }, p));
+    setTimeout(() => { try { wc.sendInputEvent(Object.assign({ type: 'mouseUp' }, p)); } catch (err) {} }, 50);
+  } catch (err) {}
+});
+// Вход в площадки — по cookie, которые появляются только после входа
+const LOGIN = { spotify: [/(^|\.)spotify\.com$/, /^sp_dc$/], soundcloud: [/(^|\.)soundcloud\.com$/, /^oauth_token$/],
+  yandex: [/(^|\.)yandex\.(ru|com|by|kz)$/, /^Session_id$/], vk: [/(^|\.)vk\.(ru|com)$/, /^remixn?sid$/] };
+ipcMain.handle('siteLogins', async () => {
+  const out = {};
+  try {
+    const all = await session.fromPartition(SITE_PARTITION).cookies.get({});
+    for (const p of Object.keys(LOGIN)) {
+      out[p] = all.some((c) => LOGIN[p][0].test(String(c.domain || '').replace(/^\./, '')) && LOGIN[p][1].test(c.name) && c.value && c.value !== 'deleted');
+    }
+  } catch (e) {}
+  return out;
+});
+const LOGOUT = { spotify: /(^|\.)spotify\.com$/, soundcloud: /(^|\.)soundcloud\.com$/, yandex: /(^|\.)(yandex\.(ru|com|by|kz)|ya\.ru)$/, vk: /(^|\.)(vk\.(ru|com)|vkontakte\.ru)$/ };
+ipcMain.handle('siteLogout', async (e, platform) => {
+  const re = LOGOUT[platform]; if (!re) return false;
+  const ses = session.fromPartition(SITE_PARTITION);
+  const all = await ses.cookies.get({});
+  for (const c of all) {
+    const d = String(c.domain || '').replace(/^\./, '');
+    if (!re.test(d)) continue;
+    try { await ses.cookies.remove((c.secure ? 'https://' : 'http://') + d + (c.path || '/'), c.name); } catch (err) {}
+  }
+  await ses.cookies.flushStore().catch(() => {});
+  return true;
+});
+
+// ---------- запрос с телом (сервер профилей) ----------
+ipcMain.handle('request', async (e, url, method, headers, body) => {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 20000);
+    const r = await net.fetch(url, { method: method === 'POST' ? 'POST' : 'GET', body: method === 'POST' ? String(body || '') : undefined,
+      headers: Object.assign({ 'User-Agent': 'MuzykaOffline/' + app.getVersion() + ' (Windows)' }, headers || {}), signal: ctrl.signal });
+    const text = await r.text();
+    clearTimeout(t);
+    return { status: r.status, body: text };
+  } catch (err) {
+    return { status: 0, body: '' };
+  }
+});
+
+// ---------- вся музыка компьютера: все диски, любые папки ----------
+const SKIP = /^(windows|windows\.old|program files|program files \(x86\)|programdata|\$recycle\.bin|system volume information|recovery|perflogs|msocache|appdata|node_modules|\.git|steamapps|steamlibrary|steam|epic games|riot games|origin games|gog games|xboxgames|intel|amd|nvidia|drivers|\$windows\.~bt|\$windows\.~ws|temp|tmp|cache)$/i;
+async function walkAudio(roots, onFile) {
+  const deadline = Date.now() + 4 * 60 * 1000;
+  let count = 0;
+  const queue = roots.map((r) => ({ dir: r, depth: 0 }));
+  while (queue.length && count < 30000 && Date.now() < deadline) {
+    const { dir, depth } = queue.shift();
+    let items = [];
+    try { items = await fs.promises.readdir(dir, { withFileTypes: true }); } catch (e) { continue; }
+    for (const it of items) {
+      if (it.name.startsWith('.')) continue;
+      const p = path.join(dir, it.name);
+      if (it.isDirectory()) { if (depth < 14 && !SKIP.test(it.name)) queue.push({ dir: p, depth: depth + 1 }); }
+      else if (AUDIO.test(it.name)) {
+        try { const st = await fs.promises.stat(p); if (st.size > 300 * 1024) { onFile(p); count++; } } catch (e) {}
+      }
+    }
+  }
+}
+ipcMain.handle('deepScan', async () => {
+  const roots = [];
+  if (process.platform === 'win32') {
+    for (const L of 'CDEFGHIJKLMNOPQRSTUVWXYZ') { const r = L + ':\\'; if (fs.existsSync(r)) roots.push(r); }
+  } else roots.push(app.getPath('home'));
+  const files = [];
+  await walkAudio(roots, (f) => { files.push(f); if (files.length % 200 === 0) sendEvent('scan', { files: files.length }); });
+  // теги читаем по 6 файлов сразу; короче 30 секунд — не песни
+  const tracks = [];
+  for (let i = 0; i < files.length; i += 6) {
+    const part = await Promise.all(files.slice(i, i + 6).map(tagsOf));
+    part.forEach((t) => { if (!t.duration || t.duration >= 30) tracks.push(t); });
+    if (i % 120 === 0) sendEvent('scan', { files: files.length, tagged: i });
+  }
+  tracks.sort((a, b) => (a.artist + a.title).localeCompare(b.artist + b.title, 'ru'));
+  return { ok: true, tracks, stats: { files: files.length } };
+});
+ipcMain.handle('filesExist', (e, list) => (Array.isArray(list) ? list : []).map((p) => { try { return fs.existsSync(p); } catch (err) { return false; } }));
 
 // ---------- обновление: скачать установщик и запустить его ----------
 // Скачивание через https из Node: сам проходит переадресации GitHub на хранилище файлов
@@ -357,14 +501,37 @@ function runSnapshots() {
       const set = JSON.parse(Files.read(DATA, 'settings.json') || '{}');
       report.push('last saved: ' + JSON.stringify(set.last && { title: set.last.queue[set.last.index].title, pos: set.last.pos }));
       await js(`UI.A.tab('set'); true`); await wait(1200); await shot('win_settings');
-      // 2.4: браузер внутри программы
+      // 2.5: вкладки площадок внутри программы
       await js(`UI.A.openLink('https://example.com/'); true`); await wait(6000);
-      const br = await js('JSON.stringify(UI.S && window.__brState ? window.__brState() : null)');
-      report.push('browser: ' + JSON.stringify(site ? siteState() : null) + ' page: ' + br);
+      const br = await js('JSON.stringify(window.__brState ? window.__brState() : null)');
+      report.push('browser: ' + JSON.stringify(shownTab ? siteState(shownTab) : null) + ' page: ' + br);
       await shot('win_browser');
-      if (site) fs.writeFileSync(path.join(out, 'win_browser_site.png'), (await site.webContents.capturePage()).toPNG());
-      await js(`UI.A.brClose(); true`); await wait(500);
-      report.push('browser closed: ' + !win.contentView.children.includes(site));
+      if (shownTab) fs.writeFileSync(path.join(out, 'win_browser_site.png'), (await sites.get(shownTab).webContents.capturePage()).toPNG());
+      const agentOk = shownTab ? await sites.get(shownTab).webContents.executeJavaScript('typeof window.__mc === "object" && typeof window.MuzykaSite === "object"') : false;
+      report.push('site agent: ' + agentOk);
+      await js(`Sites.newTab('https://example.org/'); true`); await wait(4000);
+      report.push('tabs: ' + sites.size + ' page: ' + await js('JSON.stringify(window.__brState())'));
+      await shot('win_tabs');
+      // музыка на странице площадки → «сейчас играет» в программе
+      const rate = 8000, n = rate * 20, wb = Buffer.alloc(44 + n);
+      wb.write('RIFF', 0); wb.writeUInt32LE(36 + n, 4); wb.write('WAVE', 8); wb.write('fmt ', 12); wb.writeUInt32LE(16, 16); wb.writeUInt16LE(1, 20);
+      wb.writeUInt16LE(1, 22); wb.writeUInt32LE(rate, 24); wb.writeUInt32LE(rate, 28); wb.writeUInt16LE(1, 32); wb.writeUInt16LE(8, 34); wb.write('data', 36); wb.writeUInt32LE(n, 40);
+      for (let i = 0; i < n; i++) wb[44 + i] = 128 + Math.round(Math.sin(i / rate * 2 * Math.PI * 330) * 20);
+      const page = '<!doctype html><title>Тестовая площадка</title><h1>Тестовая площадка</h1><audio id="a" controls loop src="data:audio/wav;base64,' + wb.toString('base64') +
+        '"></audio><script>navigator.mediaSession.metadata = new MediaMetadata({ title: "Тестовая песня", artist: "Проверка CI" });</script>';
+      await js(`Sites.openURL(${JSON.stringify('data:text/html;charset=utf-8;base64,' + Buffer.from(page).toString('base64'))}); true`); await wait(3000);
+      await sites.get(shownTab).webContents.executeJavaScript('document.getElementById("a").play(); true');
+      await wait(3500);
+      report.push('site now: ' + await js('JSON.stringify(Player.now() && { kind: Player.now().kind, title: Player.now().title, artist: Player.now().artist, playing: Player.isPlaying() })'));
+      await shot('win_site');
+      await js(`UI.A.minimizeAll(); true`); await wait(600);
+      await js(`UI.A.toggle(); true`); await wait(1200);
+      report.push('site paused from app: ' + await js('Sites.current ? NB.siteEval(Sites.current, "String(document.getElementById(\\"a\\").paused)") : "none"'));
+      report.push('browser minimized: ' + (shownTab === null) + ' tabs alive: ' + sites.size);
+      report.push('logins: ' + JSON.stringify(await js('Sites.refreshLogins().then(function (l) { return JSON.stringify(l); })')));
+      await js(`UI.A.setTab('perf'); true`); await wait(1500); await shot('win_perf');
+      await js(`UI.A.setTab('profile'); UI.A.authMode('register'); true`); await wait(800); await shot('win_profile');
+      await js(`UI.A.setTab('keys'); true`); await wait(600); await shot('win_keys');
       // 2.4: проверка обновлений (как будто стоит старая версия) и загрузка установщика
       const st = await js(`Updates.check(true, { current: '2.0.0' }).then(function (s) { return JSON.stringify({ s: s, v: Updates.latest && Updates.latest.version, asset: Updates.latest && Updates.latest.asset && Updates.latest.asset.name }); })`);
       report.push('update check: ' + st);
