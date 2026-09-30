@@ -38,7 +38,7 @@ android {
         release {
             minifyEnabled false
             def ks = System.getenv('ANDROID_KEYSTORE_FILE')
-            signingConfig (ks != null && new File(ks).exists()) ? signingConfigs.release : signingConfigs.debug
+            signingConfig = (ks != null && new File(ks).exists()) ? signingConfigs.release : signingConfigs.debug
         }
         debug {
             // проверочная сборка ставится рядом с обычной

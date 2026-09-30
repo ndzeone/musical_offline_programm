@@ -679,7 +679,7 @@ final class SynthwaveRenderer: BackgroundRenderer {
             var y = sc.y + R * 0.05 + shift
             var k: CGFloat = 1
             while y < sc.y + R {
-                l.fill(Path(CGRect(x: sc.x - R, y: y, width: 2 * R, height: 2 + k * 1.6)), with: .color(.black))
+                l.fill(Path(CGRect(x: sc.x - R, y: y, width: 2 * R, height: CGFloat(2) + k * 1.6)), with: .color(.black))
                 y += R * 0.16
                 k += 1
             }

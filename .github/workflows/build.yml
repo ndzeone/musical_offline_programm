@@ -112,7 +112,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Сборка (Apple silicon + Intel)
         run: |
-          export DEVELOPER_DIR=$(xcode-select -p)
+          XC=$(ls -d /Applications/Xcode*.app | python3 -c "import sys,re; l=[x.strip() for x in sys.stdin if 'beta' not in x.lower()]; print(max(l, key=lambda s: [int(n) for n in re.findall(r'\d+', s)] or [0]))")
+          export DEVELOPER_DIR="$XC/Contents/Developer"
+          echo "Xcode: $XC"; swiftc --version
           ARCHS="arm64 x86_64" bash MusicCraft/build.sh
           bash MusicCraft/make_dmg.sh "$PWD/out"
       - name: Проверка
