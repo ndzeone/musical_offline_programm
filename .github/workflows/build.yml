@@ -38,9 +38,13 @@ jobs:
         with: { name: android-apk, path: out/ }
 
   android-test:
-    name: Android — проверка на эмуляторе
+    name: Android ${{ matrix.api }} — проверка на эмуляторе
     needs: android
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [30, 34]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -51,23 +55,29 @@ jobs:
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
-      - name: Проверочная музыка
+      - name: Проверочная музыка и виртуальные колонки
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg pulseaudio > /dev/null
           bash ci/android_media.sh "$RUNNER_TEMP/music" windows/build/icon.png
+          pulseaudio -D --exit-idle-time=-1 || true
+          pactl load-module module-null-sink sink_name=virtual || true
+          pactl set-default-sink virtual || true
+          pactl info | grep -i "default sink" || true
       - name: Эмулятор и сценарий
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
-          target: google_apis
+          api-level: ${{ matrix.api }}
+          target: default
           arch: x86_64
-          profile: pixel_6
+          profile: pixel_3a
+          cores: 4
+          ram-size: 3072M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none -camera-front none
           script: bash ci/android_run.sh "$RUNNER_TEMP/music" out/app-debug.apk "out/Muzyka-v${{ env.VERSION_NAME }}-Android.apk" android-shots
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: android-screenshots, path: android-shots/ }
+        with: { name: 'android-${{ matrix.api }}-screenshots', path: android-shots/ }
 
   windows:
     name: Windows (.exe)

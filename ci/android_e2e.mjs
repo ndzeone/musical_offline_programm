@@ -14,7 +14,7 @@ const check = (name, ok, info = '') => { log((ok ? 'PASS ' : 'FAIL ') + name + (
 const sh = (cmd, opts = {}) => execSync(cmd, { encoding: opts.binary ? undefined : 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20, ...opts });
 const adb = (args, opts) => sh('adb ' + args, opts);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const shot = (name) => { fs.writeFileSync(path.join(out, name + '.png'), adb('exec-out screencap -p', { binary: true })); log('screenshot ' + name); };
+const shot = (name) => { try { adb('shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS'); } catch (e) {} fs.writeFileSync(path.join(out, name + '.png'), adb('exec-out screencap -p', { binary: true })); log('screenshot ' + name); };
 
 // ---------- DevTools ----------
 let ws = null, seq = 0;
@@ -64,11 +64,14 @@ async function main() {
   adb('shell settings put global window_animation_scale 0');
   adb(`install -r -g ${apk}`);
   adb(`shell pm clear ${PKG}`);
-  adb(`shell pm grant ${PKG} android.permission.READ_MEDIA_AUDIO`);
-  try { adb(`shell pm grant ${PKG} android.permission.POST_NOTIFICATIONS`); } catch (e) {}
+  const api = parseInt(adb('shell getprop ro.build.version.sdk').trim(), 10);
+  log('Android API ' + api);
+  adb(`shell pm grant ${PKG} android.permission.${api >= 33 ? 'READ_MEDIA_AUDIO' : 'READ_EXTERNAL_STORAGE'}`);
+  if (api >= 33) try { adb(`shell pm grant ${PKG} android.permission.POST_NOTIFICATIONS`); } catch (e) {}
   launch();
   await sleep(6000);
   await connect();
+  await js("UI.A.perf('eco'); true");
   shot('01_start');
   check('page loaded in Android mode', await js('NB.kind') === 'android');
   const ins = await js('getComputedStyle(document.documentElement).getPropertyValue("--st")');
@@ -133,7 +136,7 @@ async function main() {
   await js('UI.A.toggle(); true');
 
   // Экраны
-  await js("UI.A.libDevice(); UI.A.libSeg('fav'); true"); await sleep(1500); shot('06_favorites');
+  await js("UI.A.perf('balanced'); UI.A.libDevice(); UI.A.libSeg('fav'); true"); await sleep(1500); shot('06_favorites');
   await js("UI.A.tab('set'); true"); await sleep(1500); shot('07_settings');
   await js("UI.A.tab('apps'); true"); await sleep(1500); shot('08_apps');
   await js("UI.A.theme('kitty'); UI.A.tab('np'); true"); await sleep(2500); shot('09_kitty');
