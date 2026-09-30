@@ -7,6 +7,9 @@
     lyr: {}, nowKey: null, artTracks: {}, scene: null, previews: {}, deviceLoaded: false, askedMusic: false
   };
   var $ = function (id) { return document.getElementById(id); };
+  // Широкий экран с боковой панелью (как в app.css) и телефон, повёрнутый боком
+  function isDesk() { return window.matchMedia('(min-width: 900px) and (min-height: 541px)').matches; }
+  function isLand() { return window.matchMedia('(orientation: landscape) and (max-height: 540px)').matches; }
   var esc = U.esc;
   var FAV = Store.favID;
 
@@ -153,8 +156,10 @@
   function layoutNP() {
     var np = $('np');
     if (!np) return;
-    var W = np.clientWidth, H = np.clientHeight, desk = window.innerWidth >= 900;
-    var cov = desk ? Math.min(420, Math.max(220, Math.min(W * 0.3, H * 0.52))) : Math.round(Math.min(W - 80, Math.max(150, H * 0.3), 340));
+    var W = np.clientWidth, H = np.clientHeight, desk = isDesk();
+    var cov = desk ? Math.min(420, Math.max(220, Math.min(W * 0.3, H * 0.52)))
+      : isLand() ? Math.round(Math.max(110, Math.min(H * 0.5, W * 0.3, 240)))
+      : Math.round(Math.min(W - 80, Math.max(150, H * 0.3), 340));
     np.style.setProperty('--cov', cov + 'px');
   }
   function welcome() {
@@ -274,7 +279,7 @@
 
   // ---------- мини-плеер и прогресс ----------
   function renderMini() {
-    var now = Player.now(), el = $('mini'), desk = window.innerWidth >= 900;
+    var now = Player.now(), el = $('mini'), desk = isDesk();
     var show = now && (S.tab !== 'np' || S.playlist || desk);
     el.className = show ? (desk ? 'desk' : '') : 'off';
     if (!now) { el.innerHTML = ''; return; }
@@ -368,9 +373,9 @@
   }
   function mosaic(p) {
     var its = p.items.slice(0, 4);
-    if (!its.length) return '<div class="art" style="aspect-ratio:1;background:linear-gradient(135deg,var(--accent),var(--accent2))"><div class="ph">' + icon(p.id === FAV ? 'heartF' : 'list') + '</div></div>';
-    if (its.length < 4) return artHTML(its[0]);
-    return '<div class="mosaic" style="width:100%;height:auto;aspect-ratio:1;border-radius:0">' + its.map(function (t) { return artHTML(t); }).join('') + '</div>';
+    if (!its.length) return '<div class="sq"><div class="art" style="background:linear-gradient(135deg,var(--accent),var(--accent2))"><div class="ph">' + icon(p.id === FAV ? 'heartF' : 'list') + '</div></div></div>';
+    if (its.length < 4) return '<div class="sq">' + artHTML(its[0]) + '</div>';
+    return '<div class="sq"><div class="mosaic" style="border-radius:0">' + its.map(function (t) { return artHTML(t); }).join('') + '</div></div>';
   }
 
   // ---------- плейлист ----------
@@ -554,7 +559,7 @@
       var i = list.findIndex(function (t) { return t.uri === uri; });
       Player.setQueue(list, Math.max(0, i), true);
       saveLast();
-      if (window.innerWidth < 900) go('np'); else render();
+      if (!isDesk()) go('np'); else render();
     },
     devMenu: function (uri) {
       var t = S.device.filter(function (d) { return d.uri === uri; })[0]; if (!t) return;
@@ -732,7 +737,7 @@
     var from = Math.max(0, local.findIndex(function (x) { return x.i === start; }));
     Player.setQueue(local.map(function (x) { return x.t; }), shuffle ? 0 : from, true);
     saveLast();
-    if (window.innerWidth < 900) go('np'); else render();
+    if (!isDesk()) go('np'); else render();
   }
 
   // ---------- музыка на устройстве ----------

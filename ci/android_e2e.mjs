@@ -74,6 +74,9 @@ async function main() {
   await js("UI.A.perf('eco'); true");
   shot('01_start');
   check('page loaded in Android mode', await js('NB.kind') === 'android');
+  log('WebView: ' + await js('navigator.userAgent'));
+  const vis = await js('JSON.stringify((function(){var r=document.getElementById("screen").getBoundingClientRect(); return {w: Math.round(r.width), h: Math.round(r.height), welcome: !!document.querySelector(".welcome .btn")};})())');
+  check('main screen is laid out (not empty)', JSON.parse(vis).h > 200 && JSON.parse(vis).welcome, vis);
   const ins = await js('getComputedStyle(document.documentElement).getPropertyValue("--st")');
   check('status bar inset passed to page', parseFloat(ins) > 0, 'top=' + ins);
 
@@ -119,7 +122,7 @@ async function main() {
   adb('shell cmd statusbar collapse'); await sleep(1000);
 
   // Пауза на 0:25, сворачиваем, система закрывает приложение → открываем снова
-  await js('Player.seek(25); true'); await sleep(1200);
+  await js('Player.seek(12); true'); await sleep(1200);
   await js('UI.A.toggle(); true'); await sleep(1500);
   await js('UI.A.fav(); true'); await sleep(500);
   adb('shell input keyevent KEYCODE_HOME'); await sleep(3000);
@@ -127,12 +130,12 @@ async function main() {
   launch(); await sleep(6000);
   await connect();
   const rs = JSON.parse(await js('JSON.stringify({t: Player.current() && Player.current().title, p: Player.playing, time: Player.time(), fav: Store.playlists[0].items.map(function(i){return i.title})})'));
-  check('after restart: same song, paused, same second', rs.t && rs.t.includes('Второй') && !rs.p && Math.abs(rs.time - 25) < 2.5, JSON.stringify(rs));
+  check('after restart: same song, paused, same second', rs.t && rs.t.includes('Второй') && !rs.p && Math.abs(rs.time - 12) < 2.5, JSON.stringify(rs));
   check('favorites survived the restart', rs.fav.some((t) => t.includes('Второй')), JSON.stringify(rs.fav));
   shot('05_restored');
   await js('UI.A.toggle(); true'); await sleep(3000);
   const cont = JSON.parse(await js('JSON.stringify(NB.playbackState())'));
-  check('continues from the same place', cont.playing && cont.pos > 25, JSON.stringify(cont));
+  check('continues from the same place', cont.playing && cont.index === 1 && cont.pos > 12, JSON.stringify(cont));
   await js('UI.A.toggle(); true');
 
   // Экраны
