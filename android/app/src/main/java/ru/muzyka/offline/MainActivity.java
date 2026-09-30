@@ -539,7 +539,7 @@ public class MainActivity extends Activity implements Engine.Listener {
                         out.write(buf, 0, n);
                         done += n;
                         int pct = total > 0 ? (int) (done * 100 / total) : 0;
-                        if (pct != lastPct && pct % 2 == 0) {
+                        if (pct - lastPct >= 2 || (pct == 100 && lastPct != 100)) {
                             lastPct = pct;
                             js("window.__nbEvent && window.__nbEvent('update', {phase: 'progress', progress: " + (pct / 100.0) + "})");
                         }
