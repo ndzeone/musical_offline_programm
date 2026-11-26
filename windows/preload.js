@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const versionArg = process.argv.find((a) => a.startsWith('--muz-version='));
 
 contextBridge.exposeInMainWorld('ElectronNative', {
-  version: versionArg ? versionArg.split('=')[1] : '2.5.0',
+  version: versionArg ? versionArg.split('=')[1] : '2.5.1',
   http: (url, headers) => ipcRenderer.invoke('http', url, headers || {}),
   readFile: (name) => ipcRenderer.invoke('readFile', name),
   writeFile: (name, text) => ipcRenderer.invoke('writeFile', name, text),

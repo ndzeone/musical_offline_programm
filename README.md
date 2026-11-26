@@ -9,9 +9,9 @@
 
 | Система | Файл |
 |---|---|
-| Android 8.0+ | `Muzyka-v2.5.0-Android.apk` |
-| macOS 14+ (Apple silicon и Intel) | `Muzyka-v2.5.0-macOS.dmg` |
-| Windows 10/11, 64 бит | `Muzyka-v2.5.0-Windows-Setup.exe` |
+| Android 8.0+ | `Muzyka-v2.5.1-Android.apk` |
+| macOS 14+ (Apple silicon и Intel) | `Muzyka-v2.5.1-macOS.dmg` |
+| Windows 10/11, 64 бит | `Muzyka-v2.5.1-Windows-Setup.exe` |
 
 Дальше программа обновляется сама: Настройки → «Проверить обновления» (и автоматически при запуске и раз в 6 часов).
 

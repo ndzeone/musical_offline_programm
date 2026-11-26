@@ -58,9 +58,9 @@
     kind: kind,
     on: function (name, f) { (listeners[name] = listeners[name] || []).push(f); },
     version: function () {
-      if (A) return sync('version', [], '2.5.0');
+      if (A) return sync('version', [], '2.5.1');
       if (E && E.version) return E.version;
-      return window.__mockVersion || '2.5.0';
+      return window.__mockVersion || '2.5.1';
     },
     http: function (url, headers) {
       var h = JSON.stringify(headers || {});
